@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+/* Custom utility classes */
+.shadow-card {
+  @apply shadow-md hover:shadow-lg transition-shadow duration-300;
+}
+
+/* Status color indicators */
+.status-pending {
+  @apply bg-yellow-100 text-yellow-800 border-yellow-300;
+}
+
+.status-in-progress {
+  @apply bg-blue-100 text-blue-800 border-blue-300;
+}
+
+.status-succeeded {
+  @apply bg-green-100 text-green-800 border-green-300;
+}
+
+.status-failed {
+  @apply bg-red-100 text-red-800 border-red-300;
+}
+
+.status-queued {
+  @apply bg-purple-100 text-purple-800 border-purple-300;
+}
+
+.status-unknown {
+  @apply bg-gray-100 text-gray-800 border-gray-300;
+}

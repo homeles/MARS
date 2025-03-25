@@ -1,0 +1,60 @@
+services:
+  # MongoDB service
+  mongo:
+    image: mongo:latest
+    container_name: github-migrations-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+
+  # Backend API service
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: github-migrations-server
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongo:27017/github-migrations
+      - PORT=4000
+    depends_on:
+      - mongo
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    networks:
+      - app-network
+    command: npm run dev
+
+  # Frontend client service
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: github-migrations-client
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - server
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    networks:
+      - app-network
+    command: npm run dev
+
+# Define networks
+networks:
+  app-network:
+    driver: bridge
+
+# Define volumes
+volumes:
+  mongodb_data:
