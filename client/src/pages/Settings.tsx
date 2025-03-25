@@ -72,14 +72,14 @@ const Settings: React.FC = () => {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Settings</h1>
+      <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Settings</h1>
       
-      <div className="bg-white shadow rounded-lg p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">GitHub API Configuration</h2>
+      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+        <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">GitHub API Configuration</h2>
         
         <form onSubmit={handleSyncMigrations}>
           <div className="mb-4">
-            <label htmlFor="enterpriseName" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="enterpriseName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Enterprise/Organization Name
             </label>
             <input
@@ -87,16 +87,16 @@ const Settings: React.FC = () => {
               type="text"
               value={enterpriseName}
               onChange={(e) => setEnterpriseName(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500"
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-primary-500 focus:border-primary-500"
               placeholder="your-enterprise"
             />
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               The name of your GitHub Enterprise or Organization as it appears in URLs
             </p>
           </div>
           
           <div className="mb-4">
-            <label htmlFor="token" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="token" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               GitHub Personal Access Token
             </label>
             <input
@@ -104,23 +104,23 @@ const Settings: React.FC = () => {
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500"
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-primary-500 focus:border-primary-500"
               placeholder="ghp_•••••••••••••••••"
             />
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Token needs permissions: repo, read:org, and read:enterprise
             </p>
           </div>
           
           <div className="mb-6">
-            <label htmlFor="syncState" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="syncState" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Sync Migrations with Status
             </label>
             <select
               id="syncState"
               value={syncState}
               onChange={(e) => setSyncState(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500"
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-primary-500 focus:border-primary-500"
             >
               <option value="ALL">All Statuses</option>
               <option value="PENDING">Pending</option>
@@ -147,22 +147,22 @@ const Settings: React.FC = () => {
         </form>
         
         {syncResult && (
-          <div className={`mt-4 p-3 rounded-md ${syncResult.success ? 'bg-green-50' : 'bg-red-50'}`}>
-            <p className={syncResult.success ? 'text-green-800' : 'text-red-800'}>
+          <div className={`mt-4 p-3 rounded-md ${syncResult.success ? 'bg-green-50 dark:bg-green-900' : 'bg-red-50 dark:bg-red-900'}`}>
+            <p className={syncResult.success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}>
               {syncResult.message}
             </p>
           </div>
         )}
       </div>
       
-      <div className="bg-white shadow rounded-lg p-6 mt-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Database Information</h2>
-        <p className="text-gray-600">
+      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+        <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Database Information</h2>
+        <p className="text-gray-600 dark:text-gray-300">
           Migration data is stored in MongoDB. You can manage this database using MongoDB Compass
           or any other MongoDB client.
         </p>
-        <p className="mt-2 text-gray-600">
-          Connection URL: <code className="bg-gray-100 p-1 rounded">mongodb://localhost:27017/github-migrations</code>
+        <p className="mt-2 text-gray-600 dark:text-gray-300">
+          Connection URL: <code className="bg-gray-100 dark:bg-gray-700 p-1 rounded font-mono">mongodb://localhost:27017/github-migrations</code>
         </p>
       </div>
     </div>

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { ApolloClient, InMemoryCache, ApolloProvider, createHttpLink } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
+import { ThemeProvider } from './utils/ThemeContext';
 import App from './App';
 import './index.css';
 
@@ -35,7 +36,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <ApolloProvider client={client}>
-        <App />
+        <ThemeProvider>
+          <App />
+        </ThemeProvider>
       </ApolloProvider>
     </BrowserRouter>
   </React.StrictMode>

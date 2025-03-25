@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "@apollo/client": "^3.13.5",
+    "@tailwindcss/forms": "^0.5.10",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",

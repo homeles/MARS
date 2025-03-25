@@ -1,13 +1,33 @@
 import React, { useState } from 'react';
 import { useQuery, gql } from '@apollo/client';
-import { Link } from 'react-router-dom';
-import MigrationStatusBadge from '../components/MigrationStatusBadge';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
 import StatsCard from '../components/StatsCard';
+import MigrationStatusBadge from '../components/MigrationStatusBadge';
+import { MigrationState, Migration } from '../types';
 
-// Define GraphQL query for fetching migrations
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
 const GET_MIGRATIONS = gql`
-  query GetAllMigrations($state: MigrationState, $limit: Int, $offset: Int, $sortField: String, $sortOrder: String) {
-    allMigrations(state: $state, limit: $limit, offset: $offset, sortField: $sortField, sortOrder: $sortOrder) {
+  query GetMigrations($state: MigrationState) {
+    allMigrations(state: $state) {
       id
       repositoryName
       createdAt
@@ -21,184 +41,235 @@ const GET_MIGRATIONS = gql`
 `;
 
 const Dashboard: React.FC = () => {
-  const [filter, setFilter] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<string>('createdAt');
-  const [sortOrder, setSortOrder] = useState<string>('desc');
-  
-  // Query migrations with optional filtering
-  const { loading, error, data, refetch } = useQuery(GET_MIGRATIONS, {
-    variables: {
-      state: filter,
-      limit: 50,
-      offset: 0,
-      sortField,
-      sortOrder
-    },
-    pollInterval: 30000, // Poll every 30 seconds to get updates
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>('');
+  const [selectedMigrations, setSelectedMigrations] = useState<string[]>([]);
+
+  const { data, loading, error } = useQuery(GET_MIGRATIONS, {
+    variables: { state: selectedStatus || undefined },
   });
 
-  const handleFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = event.target.value;
-    setFilter(value === 'ALL' ? null : value);
-  };
+  const migrations: Migration[] = data?.allMigrations || [];
+  const filteredMigrations = migrations.filter(migration =>
+    migration.repositoryName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  const handleSortChange = (field: string) => {
-    if (field === sortField) {
-      // Toggle sorting order if clicking the same field
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  const handleAllRows = (migration: Migration) => {
+    if (selectedMigrations.includes(migration.id)) {
+      setSelectedMigrations(selectedMigrations.filter(id => id !== migration.id));
     } else {
-      // Default to descending order for new sort field
-      setSortField(field);
-      setSortOrder('desc');
+      setSelectedMigrations([...selectedMigrations, migration.id]);
     }
   };
 
-  // Group migrations by state for stats
-  const getMigrationStats = () => {
-    if (!data?.allMigrations) return {};
-    
-    return data.allMigrations.reduce((acc: Record<string, number>, migration: any) => {
-      const state = migration.state;
-      if (!acc[state]) acc[state] = 0;
-      acc[state]++;
-      return acc;
-    }, {});
+  const calculateStats = (migrations: Migration[]) => {
+    const stats = {
+      total: migrations.length,
+      succeeded: migrations.filter((m: Migration) => m.state === MigrationState.SUCCEEDED).length,
+      failed: migrations.filter((m: Migration) => m.state === MigrationState.FAILED).length,
+      inProgress: migrations.filter((m: Migration) => m.state === MigrationState.IN_PROGRESS).length,
+    };
+    return stats;
   };
 
-  const stats = getMigrationStats();
-  
+  const renderRow = (migration: Migration) => {
+    return (
+      <tr key={migration.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+        <td className="px-6 py-4 whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={selectedMigrations.includes(migration.id)}
+            onChange={handleAllRows.bind(null, migration)}
+            className="rounded border-gray-300 dark:border-gray-600"
+          />
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
+          {migration.repositoryName}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap">
+          <MigrationStatusBadge status={migration.state} />
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+          {new Date(migration.createdAt).toLocaleDateString()}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+          {migration.duration || '-'}
+        </td>
+      </tr>
+    );
+  };
+
+  const stats = calculateStats(migrations);
+
+  // Prepare chart data
+  const chartData = {
+    labels: ['7 days ago', '6 days ago', '5 days ago', '4 days ago', '3 days ago', '2 days ago', 'Today'],
+    datasets: [
+      {
+        label: 'Completed Migrations',
+        data: [12, 19, 15, 25, 22, 30, stats.succeeded], // Example data
+        borderColor: 'rgb(75, 192, 192)',
+        tension: 0.1,
+      },
+    ],
+  };
+
+  const handleBulkStatusUpdate = async (newStatus: MigrationState) => {
+    // Implement bulk update logic here
+    console.log(`Updating ${selectedMigrations.length} migrations to ${newStatus}`);
+  };
+
   return (
-    <div>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 mb-4 md:mb-0">Repository Migrations</h1>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <select
-            value={filter || 'ALL'}
-            onChange={handleFilterChange}
-            className="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500"
-          >
-            <option value="ALL">All Migrations</option>
-            <option value="PENDING">Pending</option>
-            <option value="QUEUED">Queued</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="SUCCEEDED">Succeeded</option>
-            <option value="FAILED">Failed</option>
-          </select>
-          
-          <button
-            onClick={() => refetch()}
-            className="bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-md"
-          >
-            Refresh
-          </button>
+    <div className="container mx-auto px-4 py-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <StatsCard
+          title="Total Migrations"
+          value={stats.total}
+          icon={<svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>}
+        />
+        <StatsCard
+          title="Successful Migrations"
+          value={stats.succeeded}
+          trend={{ value: 12, isPositive: true }}
+        />
+        <StatsCard
+          title="Failed Migrations"
+          value={stats.failed}
+        />
+        <StatsCard
+          title="In Progress"
+          value={stats.inProgress}
+        />
+      </div>
+
+      {/* Chart */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-card p-6 mb-8">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Migration Trends</h3>
+        <div className="h-64">
+          <Line data={chartData} options={{ 
+            maintainAspectRatio: false,
+            color: 'rgb(209, 213, 219)', // gray-300 for better visibility in dark mode
+            scales: {
+              y: {
+                grid: {
+                  color: 'rgba(107, 114, 128, 0.2)', // gray-500 with opacity
+                },
+                ticks: {
+                  color: 'rgb(107, 114, 128)', // gray-500
+                }
+              },
+              x: {
+                grid: {
+                  color: 'rgba(107, 114, 128, 0.2)', // gray-500 with opacity
+                },
+                ticks: {
+                  color: 'rgb(107, 114, 128)', // gray-500
+                }
+              }
+            }
+          }} />
         </div>
       </div>
 
-      {/* Migration Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-        <StatsCard title="Total" count={data?.allMigrations?.length || 0} colorClass="bg-gray-100" />
-        <StatsCard title="Succeeded" count={stats['SUCCEEDED'] || 0} colorClass="bg-green-100" />
-        <StatsCard title="Failed" count={stats['FAILED'] || 0} colorClass="bg-red-100" />
-        <StatsCard title="In Progress" count={stats['IN_PROGRESS'] || 0} colorClass="bg-blue-100" />
-        <StatsCard title="Pending/Queued" count={(stats['PENDING'] || 0) + (stats['QUEUED'] || 0)} colorClass="bg-yellow-100" />
-      </div>
-
-      {/* Migration Table */}
-      <div className="bg-white shadow overflow-hidden rounded-lg">
-        {loading ? (
-          <div className="p-6 text-center">
-            <p className="text-gray-500">Loading migrations...</p>
-          </div>
-        ) : error ? (
-          <div className="p-6 text-center">
-            <p className="text-red-500">Error loading migrations: {error.message}</p>
-          </div>
-        ) : data?.allMigrations?.length === 0 ? (
-          <div className="p-6 text-center">
-            <p className="text-gray-500">No migrations found. Try syncing from GitHub in Settings.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => handleSortChange('repositoryName')}
-                  >
-                    Repository
-                    {sortField === 'repositoryName' && (
-                      <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => handleSortChange('state')}
-                  >
-                    Status
-                    {sortField === 'state' && (
-                      <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => handleSortChange('createdAt')}
-                  >
-                    Requested
-                    {sortField === 'createdAt' && (
-                      <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => handleSortChange('duration')}
-                  >
-                    Duration
-                    {sortField === 'duration' && (
-                      <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {data.allMigrations.map((migration: any) => (
-                  <tr key={migration.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{migration.repositoryName}</div>
-                      <div className="text-sm text-gray-500">{migration.enterpriseName}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <MigrationStatusBadge status={migration.state} />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {new Date(migration.createdAt).toLocaleDateString()}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {new Date(migration.createdAt).toLocaleTimeString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {migration.duration || 'In progress'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <Link to={`/migrations/${migration.id}`} className="text-primary-600 hover:text-primary-900">
-                        View details
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Search and Filters */}
+      <div className="flex flex-wrap gap-4 mb-6">
+        <div className="flex-1">
+          <input
+            type="text"
+            placeholder="Search repositories..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+        <select
+          value={selectedStatus}
+          onChange={(e) => setSelectedStatus(e.target.value as MigrationState | '')}
+          className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+        >
+          <option value="">All Statuses</option>
+          {(Object.values(MigrationState) as MigrationState[]).map(status => (
+            <option key={status} value={status}>{status}</option>
+          ))}
+        </select>
+        {selectedMigrations.length > 0 && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleBulkStatusUpdate(MigrationState.SUCCEEDED)}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+            >
+              Mark Selected as Succeeded
+            </button>
+            <button
+              onClick={() => handleBulkStatusUpdate(MigrationState.FAILED)}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+            >
+              Mark Selected as Failed
+            </button>
           </div>
         )}
+      </div>
+
+      {/* Migrations Table */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-card overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-900">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <input
+                  type="checkbox"
+                  checked={selectedMigrations.length === filteredMigrations.length}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedMigrations(filteredMigrations.map((m: Migration) => m.id));
+                    } else {
+                      setSelectedMigrations([]);
+                    }
+                  }}
+                  className="rounded border-gray-300 dark:border-gray-600"
+                />
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Repository
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Created
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Duration
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                  Loading...
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-4 text-center text-red-500 dark:text-red-400">
+                  Error loading migrations
+                </td>
+              </tr>
+            ) : filteredMigrations.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                  No migrations found
+                </td>
+              </tr>
+            ) : (
+              filteredMigrations.map((m: Migration) => renderRow(m))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
