@@ -1,63 +1,76 @@
 import express from 'express';
-import type { Request, Response } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import mongoose from 'mongoose';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import { typeDefs } from './schema/typeDefs';
 import { resolvers } from './schema/resolvers';
-import { migrationRoutes } from './routes/migrationRoutes';
+import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 
-// Load environment variables
 dotenv.config();
 
-// Initialize Express app
-const app = express();
+type LogLevel = 'info' | 'error' | 'debug';
 
-// Connect to MongoDB
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/github-migrations';
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Configure logging
+const logger = {
+  info: (...args: any[]) => {
+    if (process.env.NODE_ENV !== 'test') {
+      console.log(new Date().toISOString(), '[INFO]', ...args);
+    }
+  },
+  error: (...args: any[]) => {
+    console.error(new Date().toISOString(), '[ERROR]', ...args);
+  },
+  debug: (...args: any[]) => {
+    if (process.env.NODE_ENV === 'development' && process.env.DEBUG === 'true') {
+      console.debug(new Date().toISOString(), '[DEBUG]', ...args);
+    }
+  }
+} as const;
 
-// Set up Apollo Server
-const startServer = async () => {
+async function startServer() {
+  const app = express();
+  const port = process.env.PORT || 4000;
+
+  // Connect to MongoDB
+  const mongoUri = process.env.MONGO_URI || 'mongodb://mongo:27017/github-migrations';
+  try {
+    await mongoose.connect(mongoUri);
+    logger.info('Connected to MongoDB');
+  } catch (error) {
+    logger.error('MongoDB connection error:', error);
+    throw error;
+  }
+
+  // Create Apollo Server with minimal logging
   const server = new ApolloServer({
     typeDefs,
     resolvers,
+    formatError: (error) => {
+      logger.error('GraphQL Error:', error.message);
+      return error;
+    },
   });
 
   await server.start();
-  
-  // Apply middleware with specific CORS configuration and body parsing
-  app.use(
-    '/graphql',
-    cors<cors.CorsRequest>(),
-    express.json(),
-    expressMiddleware(server, {
-      context: async ({ req }) => {
-        // Get auth token from request headers
-        const token = req.headers.authorization || '';
-        return { token };
-      },
-    })
-  );
+  logger.info('Apollo Server started');
 
-  // API routes
-  app.use('/api/migrations', cors(), migrationRoutes);
+  app.use(cors());
+  app.use(express.json());
 
-  // Health check endpoint
-  app.get('/api/health', cors(), (_req: Request, res: Response) => {
-    res.status(200).json({ status: 'OK', message: 'Server is running' });
+  // Apply Apollo Server middleware with minimal context logging
+  app.use('/graphql', expressMiddleware(server, {
+    context: async ({ req }) => {
+      const token = req.headers.authorization || '';
+      return { token };
+    },
+  }));
+
+  app.listen(port, () => {
+    logger.info(`Server ready at http://localhost:${port}/graphql`);
   });
+}
 
-  // Start server
-  const PORT = process.env.PORT || 4000;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`GraphQL server ready at http://localhost:${PORT}/graphql`);
-  });
-};
-
-startServer().catch(err => console.error('Error starting server:', err));
+startServer().catch((error) => {
+  logger.error('Failed to start server:', error);
+});

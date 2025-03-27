@@ -26,16 +26,30 @@ ChartJS.register(
 );
 
 const GET_MIGRATIONS = gql`
-  query GetMigrations($state: MigrationState) {
-    allMigrations(state: $state) {
-      id
-      repositoryName
-      createdAt
-      state
-      failureReason
-      completedAt
-      duration
-      enterpriseName
+  query GetMigrations($state: MigrationState, $enterpriseName: String, $organizationName: String) {
+    allMigrations(
+      state: $state
+      enterpriseName: $enterpriseName
+      organizationName: $organizationName
+    ) {
+      nodes {
+        id
+        githubId
+        repositoryName
+        createdAt
+        state
+        failureReason
+        completedAt
+        organizationName
+        targetOrganizationName
+        duration
+        enterpriseName
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      totalCount
     }
   }
 `;
@@ -49,7 +63,7 @@ const Dashboard: React.FC = () => {
     variables: { state: selectedStatus || undefined },
   });
 
-  const migrations: Migration[] = data?.allMigrations || [];
+  const migrations: Migration[] = data?.allMigrations.nodes || [];
   const filteredMigrations = migrations.filter(migration =>
     migration.repositoryName.toLowerCase().includes(searchQuery.toLowerCase())
   );

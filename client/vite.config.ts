@@ -8,5 +8,9 @@ export default defineConfig({
     host: true, // Listen on all network interfaces
     port: 3000,
     strictPort: true
+  },
+  define: {
+    'process.env.GITHUB_TOKEN': JSON.stringify(process.env.VITE_GITHUB_TOKEN),
+    'process.env.GITHUB_ENTERPRISE_NAME': JSON.stringify(process.env.VITE_GITHUB_ENTERPRISE_NAME)
   }
 })

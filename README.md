@@ -23,9 +23,42 @@ A modern, full-stack application to monitor and track GitHub Repository Migratio
 - [Docker and Docker Compose](https://docs.docker.com/get-docker/)
 - [Node.js](https://nodejs.org/) v18 or higher (for local development)
 - [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) with:
-  - `repo` scope
-  - `read:org` scope
-  - `read:enterprise` scope
+  - `repo` scope (for repository access)
+  - `read:org` scope (for organization access)
+  - `read:enterprise` scope (for enterprise access)
+  - `admin:org` scope (required for managing migrator role)
+  
+### Required Permissions
+
+For the migration tracking to work properly, you need one of the following:
+
+1. Be an organization owner
+2. Have the migrator role assigned to you or your team
+
+If you're not an organization owner, you'll need to have someone grant you the migrator role. This can be done in two ways:
+
+#### Using GitHub CLI with GEI extension
+
+```bash
+# Install the GEI extension first
+gh extension install github/gh-gei
+
+# Grant migrator role (must be done by an organization owner)
+gh gei grant-migrator-role --github-org YOUR_ORG --actor YOUR_USERNAME --actor-type USER
+```
+
+#### Using GraphQL API
+
+Organization owners can grant the migrator role using the `grantMigratorRole` mutation through the GraphQL API.
+
+⚠️ **Important Notes:**
+- The migrator role grants access to import/export any repository in the organization
+- You must be granted the migrator role separately for each organization
+- You cannot grant the migrator role for enterprise accounts
+- Personal Access Tokens (classic) are required - fine-grained tokens are not supported
+- If your organization uses SAML SSO, you must authorize your PAT for SSO access
+
+For more details, see the [GitHub Enterprise Importer documentation](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/managing-access-for-a-migration-between-github-products#granting-the-migrator-role-with-the-gei-extension).
 
 ## Getting Started
 

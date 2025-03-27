@@ -3,19 +3,23 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
 import MigrationStatusBadge from '../components/MigrationStatusBadge';
 
-// GraphQL query to fetch a single migration by ID
 const GET_MIGRATION = gql`
   query GetMigration($id: ID!) {
-    repositoryMigration(id: $id) {
+    migration(id: $id) {
       id
       repositoryName
       state
       createdAt
       completedAt
-      duration
       failureReason
-      migrationLogUrl
-      enterpriseName
+      targetUrl
+      organizationName
+      targetOrganizationName
+      migrationSource {
+        name
+        type
+        url
+      }
     }
   }
 `;
@@ -48,7 +52,7 @@ const MigrationDetails: React.FC = () => {
     );
   }
 
-  if (!data || !data.repositoryMigration) {
+  if (!data || !data.migration) {
     return (
       <div className="bg-yellow-50 dark:bg-yellow-900 p-6 rounded-lg shadow-sm">
         <h2 className="text-lg font-semibold text-yellow-800 dark:text-yellow-200 mb-2">Migration Not Found</h2>
@@ -60,7 +64,7 @@ const MigrationDetails: React.FC = () => {
     );
   }
 
-  const migration = data.repositoryMigration;
+  const migration = data.migration;
   const createdDate = new Date(migration.createdAt);
   const completedDate = migration.completedAt ? new Date(migration.completedAt) : null;
 
@@ -93,9 +97,9 @@ const MigrationDetails: React.FC = () => {
             </div>
             
             <div className="bg-white dark:bg-gray-800 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Enterprise</dt>
+              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Organization</dt>
               <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
-                {migration.enterpriseName || 'N/A'}
+                {migration.organizationName}
               </dd>
             </div>
             
@@ -107,25 +111,36 @@ const MigrationDetails: React.FC = () => {
             </div>
             
             <div className="bg-white dark:bg-gray-800 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Requested at</dt>
+              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Created at</dt>
               <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
                 {createdDate.toLocaleString()}
               </dd>
             </div>
             
-            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Completed at</dt>
-              <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
-                {completedDate ? completedDate.toLocaleString() : 'Not completed yet'}
-              </dd>
-            </div>
-            
-            <div className="bg-white dark:bg-gray-800 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Duration</dt>
-              <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
-                {migration.duration || 'In progress'}
-              </dd>
-            </div>
+            {completedDate && (
+              <div className="bg-white dark:bg-gray-800 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Completed at</dt>
+                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
+                  {completedDate.toLocaleString()}
+                </dd>
+              </div>
+            )}
+
+            {migration.targetUrl && (
+              <div className="bg-gray-50 dark:bg-gray-900 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Target URL</dt>
+                <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">
+                  <a 
+                    href={migration.targetUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+                  >
+                    {migration.targetUrl}
+                  </a>
+                </dd>
+              </div>
+            )}
 
             {migration.failureReason && (
               <div className="bg-gray-50 dark:bg-gray-900 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
@@ -135,19 +150,23 @@ const MigrationDetails: React.FC = () => {
                 </dd>
               </div>
             )}
-            
-            {migration.migrationLogUrl && (
+
+            {migration.migrationSource && (
               <div className="bg-white dark:bg-gray-800 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Migration log</dt>
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Source</dt>
                 <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">
-                  <a 
-                    href={migration.migrationLogUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
-                  >
-                    View migration log
-                  </a>
+                  <div>Type: {migration.migrationSource.type}</div>
+                  <div>Name: {migration.migrationSource.name}</div>
+                  {migration.migrationSource.url && (
+                    <a 
+                      href={migration.migrationSource.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+                    >
+                      View source
+                    </a>
+                  )}
                 </dd>
               </div>
             )}

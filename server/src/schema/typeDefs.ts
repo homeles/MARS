@@ -1,72 +1,109 @@
-import { gql } from 'graphql-tag';
+import gql from 'graphql-tag';
 
 export const typeDefs = gql`
   enum MigrationState {
     PENDING
-    QUEUED
     IN_PROGRESS
-    SUCCEEDED
     FAILED
-    UNKNOWN
+    SUCCEEDED
+    NOT_STARTED
   }
 
   type PageInfo {
-    hasPreviousPage: Boolean
-    startCursor: String
+    hasNextPage: Boolean!
     endCursor: String
+  }
+
+  type MigrationConnection {
+    nodes: [RepositoryMigration!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
+  }
+
+  type MigrationSource {
+    id: ID!
+    name: String!
+    type: String!
+    url: String!
   }
 
   type RepositoryMigration {
     id: ID!
-    repositoryName: String!
-    createdAt: String!
+    githubId: String!
+    databaseId: String
+    downloadUrl: String
+    excludeAttachments: Boolean
+    excludeGitData: Boolean
+    excludeOwnerProjects: Boolean
+    excludeReleases: Boolean
+    locked: Boolean
+    sourceUrl: String
     state: MigrationState!
+    warningsCount: Int!
     failureReason: String
-    migrationLogUrl: String
-    enterpriseName: String
-    duration: String
+    createdAt: String!
     completedAt: String
+    duration: Int
+    repositoryName: String!
+    enterpriseName: String!
+    organizationName: String!
+    targetOrganizationName: String
+    migrationSource: MigrationSource
   }
 
-  type RepositoryMigrationsResponse {
-    nodes: [RepositoryMigration]!
-    pageInfo: PageInfo!
+  type Organization {
+    id: ID!
+    login: String!
+    name: String
+  }
+
+  type OrganizationConnection {
+    nodes: [Organization!]!
+  }
+
+  type Enterprise {
+    organizations: OrganizationConnection!
+  }
+
+  type OrgAccessStatus {
+    orgId: ID!
+    orgLogin: String!
+    hasAccess: Boolean!
+    errorMessage: String
+    lastChecked: String!
+    enterpriseName: String!
   }
 
   type Query {
-    # Get migrations by state
-    repositoryMigrations(state: MigrationState!, before: String): RepositoryMigrationsResponse
-    
-    # Get migration by ID
-    repositoryMigration(id: ID!): RepositoryMigration
-    
-    # Get all migrations from local database
+    enterprise(slug: String!): Enterprise
     allMigrations(
-      state: MigrationState, 
-      limit: Int, 
-      offset: Int, 
-      sortField: String, 
-      sortOrder: String
-    ): [RepositoryMigration]!
+      state: MigrationState
+      first: Int
+      after: String
+      enterpriseName: String
+      organizationName: String
+    ): MigrationConnection!
+    migration(id: ID!): RepositoryMigration
+    enterpriseStats(enterpriseName: String!): EnterpriseStats!
+    orgAccessStatus(enterpriseName: String!): [OrgAccessStatus!]!
+  }
+
+  type EnterpriseStats {
+    totalMigrations: Int!
+    completedMigrations: Int!
+    failedMigrations: Int!
+    inProgressMigrations: Int!
+    averageDuration: Float
+  }
+
+  type MigrationResponse {
+    success: Boolean!
+    message: String
   }
 
   type Mutation {
-    # Sync migrations from GitHub to local database
-    syncMigrations(enterpriseName: String!, token: String!): Boolean
-    
-    # Manually add migration to local database
-    addMigration(
-      repositoryName: String!, 
-      state: MigrationState!, 
-      createdAt: String!
-    ): RepositoryMigration
-    
-    # Update migration in local database
-    updateMigration(
-      id: ID!, 
-      state: MigrationState, 
-      completedAt: String, 
-      failureReason: String
-    ): RepositoryMigration
+    syncMigrations(enterpriseName: String!, token: String!): MigrationResponse!
+    updateMigrationState(id: ID!, state: MigrationState!): RepositoryMigration
+    checkOrgAccess(enterpriseName: String!, token: String!): [OrgAccessStatus!]!
   }
 `;

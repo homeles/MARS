@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # MongoDB service
   mongo:
@@ -9,6 +11,12 @@ services:
       - mongodb_data:/data/db
     networks:
       - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
   # Backend API service
   server:
@@ -22,6 +30,8 @@ services:
       - NODE_ENV=development
       - MONGO_URI=mongodb://mongo:27017/github-migrations
       - PORT=4000
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_ENTERPRISE_NAME=${GITHUB_ENTERPRISE_NAME}
     depends_on:
       - mongo
     volumes:
@@ -29,7 +39,15 @@ services:
       - /app/node_modules
     networks:
       - app-network
+    env_file:
+      - .env
     command: npm run dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
   # Frontend client service
   client:
@@ -41,6 +59,8 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=development
+      - VITE_GITHUB_TOKEN=${GITHUB_TOKEN}
+      - VITE_GITHUB_ENTERPRISE_NAME=${GITHUB_ENTERPRISE_NAME}
     depends_on:
       - server
     volumes:
@@ -48,7 +68,15 @@ services:
       - /app/node_modules
     networks:
       - app-network
+    env_file:
+      - .env
     command: npm run dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
 # Define networks
 networks:

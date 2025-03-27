@@ -1,223 +1,526 @@
 import axios from 'axios';
-import { RepositoryMigration, MigrationState } from '../models/RepositoryMigration';
-import moment from 'moment';
-import { SortOrder } from 'mongoose';
+import { MigrationState, RepositoryMigration, OrgAccessStatus } from '../models/RepositoryMigration';
 
-interface Context {
+const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
+
+interface ResolverContext {
   token: string;
+}
+
+interface Migration {
+  state: string;
+  id: string;
+  databaseId: string;
+  downloadUrl: string;
+  excludeAttachments: boolean;
+  excludeGitData: boolean;
+  excludeOwnerProjects: boolean;
+  excludeReleases: boolean;
+  locked: boolean;
+  sourceUrl: string;
+  warningsCount: number;
+  failureReason?: string;
+  createdAt: string;
+  completedAt?: string;
+  repositoryName: string;
+  organizationName: string;
+  targetOrganizationName?: string;
+  migrationSource: {
+    id: string;
+    name: string;
+    type: string;
+    url: string;
+  };
 }
 
 export const resolvers = {
   Query: {
-    // Get migrations by state from GitHub API directly
-    repositoryMigrations: async (_: any, { state, before }: { state: MigrationState, before?: string }, context: Context) => {
-      try {
-        if (!context.token) {
-          throw new Error('Authentication token is required');
-        }
-
-        // This would call the GitHub GraphQL API with the token from context
-        // For now we'll return data from our database to demonstrate functionality
-        const query = state ? { state } : {};
-        const migrations = await RepositoryMigration.find(query).limit(100).sort({ createdAt: -1 });
-        
-        return {
-          nodes: migrations.map(migration => ({
-            id: migration.githubId,
-            repositoryName: migration.repositoryName,
-            createdAt: migration.createdAt.toISOString(),
-            state: migration.state,
-            failureReason: migration.failureReason,
-            migrationLogUrl: migration.migrationLogUrl,
-            completedAt: migration.completedAt?.toISOString(),
-            duration: migration.duration ? `${Math.round(migration.duration / (1000 * 60))} minutes` : null,
-            enterpriseName: migration.enterpriseName
-          })),
-          pageInfo: {
-            hasPreviousPage: false, // For simplicity, we're not implementing pagination here
-            startCursor: null,
-            endCursor: null
-          }
-        };
-      } catch (error) {
-        console.error('Error in repositoryMigrations resolver:', error);
-        throw error;
-      }
-    },
-
-    // Get a single migration by ID from our database
-    repositoryMigration: async (_: any, { id }: { id: string }) => {
-      try {
-        const migration = await RepositoryMigration.findOne({ githubId: id });
-        
-        if (!migration) {
-          throw new Error(`Migration with ID ${id} not found`);
-        }
-        
-        return {
-          id: migration.githubId,
-          repositoryName: migration.repositoryName,
-          createdAt: migration.createdAt.toISOString(),
-          state: migration.state,
-          failureReason: migration.failureReason,
-          migrationLogUrl: migration.migrationLogUrl,
-          completedAt: migration.completedAt?.toISOString(),
-          duration: migration.duration ? `${Math.round(migration.duration / (1000 * 60))} minutes` : null,
-          enterpriseName: migration.enterpriseName
-        };
-      } catch (error) {
-        console.error('Error in repositoryMigration resolver:', error);
-        throw error;
-      }
-    },
-
-    // Get all migrations from our database with filtering and sorting
     allMigrations: async (
-      _: any, 
-      { 
-        state, 
-        limit = 50, 
-        offset = 0, 
-        sortField = 'createdAt',
-        sortOrder = 'desc' 
-      }: {
-        state?: MigrationState,
-        limit?: number,
-        offset?: number,
-        sortField?: string,
-        sortOrder?: string
-      }
+      _: unknown,
+      { state, first = 100, after, enterpriseName, organizationName }: { 
+        state?: string;
+        first?: number;
+        after?: string;
+        enterpriseName?: string;
+        organizationName?: string;
+      },
+      { token }: ResolverContext
     ) => {
-      try {
-        const query = state ? { state } : {};
-        // Fix the sort format for MongoDB
-        const sort: Record<string, SortOrder> = { 
-          [sortField]: (sortOrder === 'asc' ? 1 : -1) as SortOrder 
-        };
-        
-        const migrations = await RepositoryMigration.find(query)
-          .sort(sort)
-          .skip(offset)
-          .limit(limit);
-        
-        return migrations.map(migration => ({
-          id: migration.githubId,
-          repositoryName: migration.repositoryName,
-          createdAt: migration.createdAt.toISOString(),
-          state: migration.state,
-          failureReason: migration.failureReason,
-          migrationLogUrl: migration.migrationLogUrl,
-          completedAt: migration.completedAt?.toISOString(),
-          duration: migration.duration ? `${Math.round(migration.duration / (1000 * 60))} minutes` : null,
-          enterpriseName: migration.enterpriseName
+      if (!token) {
+        throw new Error('Authentication token is required');
+      }
+
+      // First get the migrations from the database
+      let migrations = await RepositoryMigration.find()
+        .sort({ createdAt: -1 })
+        .lean();
+
+      // Filter by state if specified
+      if (state) {
+        migrations = migrations.filter(m => m.state === state);
+      }
+
+      // Filter by organization if specified
+      if (organizationName) {
+        migrations = migrations.filter(m => m.organizationName === organizationName);
+      }
+
+      // Map MongoDB fields to GraphQL fields and validate required fields
+      const nodes = migrations
+        .filter(m => {
+          // Filter out any documents that are missing required fields
+          return m._id && 
+                 m.githubId && 
+                 m.state && 
+                 m.repositoryName && 
+                 m.organizationName && 
+                 m.createdAt;
+        })
+        .map(m => ({
+          id: m._id.toString(),
+          githubId: m.githubId,
+          databaseId: m.databaseId || null,
+          downloadUrl: m.downloadUrl || null,
+          excludeAttachments: m.excludeAttachments || false,
+          excludeGitData: m.excludeGitData || false,
+          excludeOwnerProjects: m.excludeOwnerProjects || false,
+          excludeReleases: m.excludeReleases || false,
+          locked: m.locked || false,
+          sourceUrl: m.sourceUrl || null,
+          state: m.state,
+          warningsCount: m.warningsCount || 0,
+          failureReason: m.failureReason || null,
+          createdAt: m.createdAt.toISOString(),
+          completedAt: m.completedAt?.toISOString() || null,
+          repositoryName: m.repositoryName,
+          enterpriseName: m.enterpriseName,
+          organizationName: m.organizationName,
+          targetOrganizationName: m.targetOrganizationName || null,
+          migrationSource: m.migrationSource || null
         }));
+
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: false,
+          endCursor: null
+        },
+        totalCount: nodes.length
+      };
+    },
+
+    migration: async (_: unknown, { id }: { id: string }, { token }: ResolverContext) => {
+      if (!token) {
+        throw new Error('Authentication token is required');
+      }
+
+      const query = `
+        query getMigration($id: ID!) {
+          node(id: $id) {
+            ... on Migration {
+              id
+              databaseId
+              downloadUrl
+              excludeAttachments
+              excludeGitData
+              excludeOwnerProjects
+              excludeReleases
+              locked
+              sourceUrl
+              state
+              warningsCount
+              failureReason
+              createdAt
+              repositoryName
+              migrationSource {
+                id
+                name
+                type
+                url
+              }
+            }
+          }
+        }
+      `;
+
+      try {
+        const response = await axios.post(
+          GITHUB_GRAPHQL_URL,
+          {
+            query,
+            variables: { id }
+          },
+          {
+            headers: {
+              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          }
+        );
+
+        if (response.data.errors) {
+          throw new Error(response.data.errors[0].message);
+        }
+
+        return response.data.data.node;
       } catch (error) {
-        console.error('Error in allMigrations resolver:', error);
+        console.error('Error fetching migration:', error);
         throw error;
       }
-    }
+    },
+
+    enterpriseStats: async (
+      _: unknown,
+      { enterpriseName }: { enterpriseName: string },
+      { token }: ResolverContext
+    ) => {
+      if (!token) {
+        throw new Error('Authentication token is required');
+      }
+
+      const query = `
+        query getEnterpriseStats($enterpriseName: String!) {
+          enterprise(slug: $enterpriseName) {
+            migrations: organizationMigrations(first: 100) {
+              nodes {
+                state
+                createdAt
+                completedAt
+              }
+              totalCount
+            }
+          }
+        }
+      `;
+
+      try {
+        const response = await axios.post(
+          GITHUB_GRAPHQL_URL,
+          {
+            query,
+            variables: { enterpriseName }
+          },
+          {
+            headers: {
+              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          }
+        );
+
+        if (response.data.errors) {
+          throw new Error(response.data.errors[0].message);
+        }
+
+        const migrations = response.data.data.enterprise.migrations.nodes;
+        const totalMigrations = migrations.length;
+        const completedMigrations = migrations.filter((m: Migration) => m.state === 'SUCCEEDED').length;
+        const failedMigrations = migrations.filter((m: Migration) => m.state === 'FAILED').length;
+        const inProgressMigrations = migrations.filter((m: Migration) => m.state === 'IN_PROGRESS').length;
+
+        // Calculate average duration for completed migrations
+        const completedWithDuration = migrations.filter((m: Migration) => 
+          m.state === 'SUCCEEDED' && m.completedAt && m.createdAt
+        );
+        
+        const averageDuration = completedWithDuration.length > 0
+          ? completedWithDuration.reduce((acc: number, m: Migration) => {
+              if (!m.completedAt) return acc; // TypeScript guard
+              const duration = new Date(m.completedAt).getTime() - new Date(m.createdAt).getTime();
+              return acc + duration;
+            }, 0) / completedWithDuration.length / (1000 * 60) // Convert to minutes
+          : null;
+
+        return {
+          totalMigrations,
+          completedMigrations,
+          failedMigrations,
+          inProgressMigrations,
+          averageDuration
+        };
+      } catch (error) {
+        console.error('Error fetching enterprise stats:', error);
+        throw error;
+      }
+    },
+
+    enterprise: async (_: unknown, { slug }: { slug: string }, { token }: ResolverContext) => {
+      if (!token) {
+        throw new Error('Authentication token is required');
+      }
+
+      const query = `
+        query getEnterpriseOrgs($slug: String!) {
+          enterprise(slug: $slug) {
+            organizations(first: 100) {
+              nodes {
+                id
+                login
+                name
+              }
+            }
+          }
+        }
+      `;
+
+      try {
+        const response = await axios.post(
+          GITHUB_GRAPHQL_URL,
+          {
+            query,
+            variables: { slug }
+          },
+          {
+            headers: {
+              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          }
+        );
+
+        if (response.data.errors) {
+          throw new Error(response.data.errors[0].message);
+        }
+
+        return response.data.data.enterprise;
+      } catch (error) {
+        console.error('Error fetching enterprise organizations:', error);
+        throw error;
+      }
+    },
+
+    orgAccessStatus: async (_: unknown, { enterpriseName }: { enterpriseName: string }) => {
+      return await OrgAccessStatus.find({ enterpriseName });
+    },
   },
-  
+
   Mutation: {
-    // Sync migrations from GitHub to our database
-    syncMigrations: async (_: any, { enterpriseName, token }: { enterpriseName: string, token: string }) => {
+    syncMigrations: async (_: unknown, { enterpriseName, token }: { enterpriseName: string; token: string }) => {
       try {
-        // Call our REST API endpoint to sync migrations
-        const response = await axios.post(`http://localhost:4000/api/migrations/sync`, {
-          enterpriseName,
-          token
-        });
+        // Check if we have admin access to the organization
+        const checkPermissionQuery = `
+          query checkOrgPermission($organization: String!) {
+            organization(login: $organization) {
+              viewerCanAdminister
+            }
+          }
+        `;
+
+        const permissionResponse = await axios.post(
+          GITHUB_GRAPHQL_URL,
+          {
+            query: checkPermissionQuery,
+            variables: { 
+              organization: enterpriseName
+            }
+          },
+          {
+            headers: {
+              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          }
+        );
+
+        if (permissionResponse.data.errors) {
+          throw new Error(permissionResponse.data.errors[0].message);
+        }
+
+        const hasAdminAccess = permissionResponse.data.data.organization?.viewerCanAdminister;
         
-        return true;
-      } catch (error) {
-        console.error('Error in syncMigrations resolver:', error);
-        throw error;
-      }
-    },
-    
-    // Manually add a migration to our database
-    addMigration: async (_: any, { 
-      repositoryName, 
-      state, 
-      createdAt 
-    }: { 
-      repositoryName: string, 
-      state: MigrationState, 
-      createdAt: string 
-    }) => {
-      try {
-        // Generate a fake GitHub ID for manually added migrations
-        const githubId = `manual_${Date.now()}`;
+        if (!hasAdminAccess) {
+          return {
+            success: false,
+            message: `You don't have admin access to the organization ${enterpriseName}. Please make sure you have the correct permissions.`
+          };
+        }
+
+        // If we have admin access, proceed with migration sync
+        const query = `
+          query getRepositoryMigrations($organization: String!, $first: Int!) {
+            organization(login: $organization) {
+              repositoryMigrations(first: $first, orderBy: {field: CREATED_AT, direction: DESC}) {
+                nodes {
+                  id
+                  databaseId
+                  sourceUrl
+                  state
+                  warningsCount
+                  failureReason
+                  createdAt
+                  repositoryName
+                  migrationSource {
+                    id
+                    name
+                    type
+                    url
+                  }
+                }
+              }
+            }
+          }
+        `;
+
+        const response = await axios.post(
+          GITHUB_GRAPHQL_URL,
+          {
+            query,
+            variables: { 
+              organization: enterpriseName,
+              first: 100
+            }
+          },
+          {
+            headers: {
+              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          }
+        );
+
+        if (response.data.errors) {
+          const errorMessage = response.data.errors[0].message;
+          throw new Error(`Failed to fetch migrations: ${errorMessage}`);
+        }
+
+        const migrations = response.data.data.organization.repositoryMigrations.nodes;
         
-        const migration = await RepositoryMigration.create({
-          githubId,
-          repositoryName,
-          createdAt: new Date(createdAt),
-          state,
-          enterpriseName: 'manually-added' // Placeholder for manually added migrations
-        });
-        
+        if (!migrations || migrations.length === 0) {
+          return {
+            success: true,
+            message: `No migrations found for ${enterpriseName}`
+          };
+        }
+
+        // Save migrations to database
+        for (const migration of migrations) {
+          await RepositoryMigration.findOneAndUpdate(
+            { githubId: migration.id },
+            {
+              githubId: migration.id,
+              databaseId: migration.databaseId,
+              sourceUrl: migration.sourceUrl,
+              state: migration.state,
+              warningsCount: migration.warningsCount,
+              failureReason: migration.failureReason,
+              createdAt: new Date(migration.createdAt),
+              repositoryName: migration.repositoryName,
+              organizationName: enterpriseName,
+              enterpriseName: enterpriseName,
+              migrationSource: migration.migrationSource
+            },
+            { upsert: true, new: true }
+          );
+        }
+
         return {
-          id: migration.githubId,
-          repositoryName: migration.repositoryName,
-          createdAt: migration.createdAt.toISOString(),
-          state: migration.state,
-          enterpriseName: migration.enterpriseName
+          success: true,
+          message: `Successfully synced ${migrations.length} migrations from ${enterpriseName}`
         };
       } catch (error) {
-        console.error('Error in addMigration resolver:', error);
-        throw error;
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        return {
+          success: false,
+          message: `Error syncing migrations: ${errorMessage}`
+        };
       }
     },
-    
-    // Update a migration in our database
-    updateMigration: async (_: any, { 
-      id, 
-      state, 
-      completedAt,
-      failureReason 
-    }: { 
-      id: string, 
-      state?: MigrationState, 
-      completedAt?: string,
-      failureReason?: string 
-    }) => {
-      try {
-        const migration = await RepositoryMigration.findOne({ githubId: id });
-        
-        if (!migration) {
-          throw new Error(`Migration with ID ${id} not found`);
+
+    checkOrgAccess: async (_: unknown, { enterpriseName, token }: { enterpriseName: string; token: string }) => {
+      // Clear existing access statuses for this enterprise
+      await OrgAccessStatus.deleteMany({ enterpriseName });
+
+      // Get organizations for the enterprise
+      const query = `
+        query getOrganizations($enterprise: String!) {
+          enterprise(slug: $enterprise) {
+            organizations(first: 100) {
+              nodes {
+                id
+                login
+                name
+              }
+            }
+          }
         }
-        
-        if (state) {
-          migration.state = state;
+      `;
+
+      const orgsResponse = await axios.post(
+        GITHUB_GRAPHQL_URL,
+        {
+          query,
+          variables: { enterprise: enterpriseName }
+        },
+        {
+          headers: {
+            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          }
         }
-        
-        if (completedAt) {
-          migration.completedAt = new Date(completedAt);
-        }
-        
-        if (failureReason) {
-          migration.failureReason = failureReason;
-        }
-        
-        await migration.save();
-        
-        return {
-          id: migration.githubId,
-          repositoryName: migration.repositoryName,
-          createdAt: migration.createdAt.toISOString(),
-          state: migration.state,
-          failureReason: migration.failureReason,
-          migrationLogUrl: migration.migrationLogUrl,
-          completedAt: migration.completedAt?.toISOString(),
-          duration: migration.duration ? `${Math.round(migration.duration / (1000 * 60))} minutes` : null,
-          enterpriseName: migration.enterpriseName
-        };
-      } catch (error) {
-        console.error('Error in updateMigration resolver:', error);
-        throw error;
+      );
+
+      if (orgsResponse.data.errors) {
+        throw new Error(orgsResponse.data.errors[0].message);
       }
+
+      const orgs = orgsResponse.data.data.enterprise.organizations.nodes;
+      const results = [];
+
+      // Check access for each organization
+      for (const org of orgs) {
+        try {
+          const checkQuery = `
+            query checkAccess($org: String!) {
+              organization(login: $org) {
+                viewerCanAdminister
+              }
+            }
+          `;
+
+          const result = await axios.post(
+            GITHUB_GRAPHQL_URL,
+            {
+              query: checkQuery,
+              variables: { org: org.login }
+            },
+            {
+              headers: {
+                'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              }
+            }
+          );
+
+          const hasAccess = !result.data.errors && result.data.data.organization?.viewerCanAdminister;
+          const errorMessage = result.data.errors ? result.data.errors[0].message : null;
+
+          // Save to database
+          const accessStatus = await OrgAccessStatus.create({
+            orgId: org.id,
+            orgLogin: org.login,
+            hasAccess,
+            errorMessage,
+            lastChecked: new Date(),
+            enterpriseName
+          });
+
+          results.push(accessStatus);
+        } catch (error) {
+          // Save error state to database
+          const accessStatus = await OrgAccessStatus.create({
+            orgId: org.id,
+            orgLogin: org.login,
+            hasAccess: false,
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+            lastChecked: new Date(),
+            enterpriseName
+          });
+
+          results.push(accessStatus);
+        }
+      }
+
+      return results;
     }
   }
 };

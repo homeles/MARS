@@ -1,20 +1,29 @@
 export enum MigrationState {
   PENDING = 'PENDING',
-  QUEUED = 'QUEUED',
   IN_PROGRESS = 'IN_PROGRESS',
-  SUCCEEDED = 'SUCCEEDED',
   FAILED = 'FAILED',
-  UNKNOWN = 'UNKNOWN'
+  SUCCEEDED = 'SUCCEEDED',
+  NOT_STARTED = 'NOT_STARTED'
+}
+
+export interface MigrationSource {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
 }
 
 export interface Migration {
   id: string;
+  githubId: string;
   repositoryName: string;
   createdAt: string;
   state: MigrationState;
   failureReason?: string;
-  migrationLogUrl?: string;
-  enterpriseName?: string;
   completedAt?: string;
-  duration?: string;
+  organizationName: string;
+  targetOrganizationName?: string;
+  duration?: number;
+  enterpriseName: string;
+  migrationSource?: MigrationSource;
 }

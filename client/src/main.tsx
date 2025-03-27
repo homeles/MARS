@@ -14,8 +14,8 @@ const httpLink = createHttpLink({
 
 // Add authentication to Apollo Client requests
 const authLink = setContext((_, { headers }) => {
-  // Get the token from local storage if available
-  const token = localStorage.getItem('githubToken');
+  // Get token from environment variable
+  const token = import.meta.env.VITE_GITHUB_TOKEN;
   
   // Return the headers to the context
   return {
@@ -26,10 +26,15 @@ const authLink = setContext((_, { headers }) => {
   };
 });
 
-// Create Apollo Client
+// Create Apollo Client with retries
 const client = new ApolloClient({
   link: authLink.concat(httpLink),
-  cache: new InMemoryCache()
+  cache: new InMemoryCache(),
+  defaultOptions: {
+    query: {
+      fetchPolicy: 'network-only', // Don't cache query results
+    },
+  }
 });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
