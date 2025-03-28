@@ -103,7 +103,7 @@ export const typeDefs = gql`
 
   type Mutation {
     syncMigrations(enterpriseName: String!, token: String!): MigrationResponse!
-    updateMigrationState(id: ID!, state: MigrationState!): RepositoryMigration
+    updateMigrationState(githubId: ID!, state: MigrationState!): RepositoryMigration
     checkOrgAccess(enterpriseName: String!, token: String!): [OrgAccessStatus!]!
   }
 `;

@@ -19,6 +19,7 @@ export interface Migration {
   repositoryName: string;
   createdAt: string;
   state: MigrationState;
+  warningsCount: number;
   failureReason?: string;
   completedAt?: string;
   organizationName: string;

@@ -8,7 +8,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongodb_data:/data/db
+      - mongodb_data2:/data/db
     networks:
       - app-network
     logging:
@@ -85,4 +85,4 @@ networks:
 
 # Define volumes
 volumes:
-  mongodb_data:
+  mongodb_data2:

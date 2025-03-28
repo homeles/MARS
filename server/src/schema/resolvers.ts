@@ -114,18 +114,41 @@ export const resolvers = {
         throw new Error('Authentication token is required');
       }
 
+      // Try to find the migration in our local database first
+      const localMigration = await RepositoryMigration.findOne({ githubId: id });
+      if (localMigration) {
+        return {
+          id: localMigration.githubId, // Return githubId as the ID
+          githubId: localMigration.githubId,
+          databaseId: localMigration.databaseId,
+          downloadUrl: localMigration.downloadUrl,
+          excludeAttachments: localMigration.excludeAttachments || false,
+          excludeGitData: localMigration.excludeGitData || false,
+          excludeOwnerProjects: localMigration.excludeOwnerProjects || false,
+          excludeReleases: localMigration.excludeReleases || false,
+          locked: localMigration.locked || false,
+          sourceUrl: localMigration.sourceUrl,
+          state: localMigration.state,
+          warningsCount: localMigration.warningsCount || 0,
+          failureReason: localMigration.failureReason,
+          createdAt: localMigration.createdAt?.toISOString(),
+          completedAt: localMigration.completedAt?.toISOString(),
+          repositoryName: localMigration.repositoryName,
+          enterpriseName: localMigration.enterpriseName,
+          organizationName: localMigration.organizationName,
+          targetOrganizationName: localMigration.targetOrganizationName,
+          duration: localMigration.duration,
+          migrationSource: localMigration.migrationSource
+        };
+      }
+
+      // If not found locally, try to fetch from GitHub
       const query = `
         query getMigration($id: ID!) {
           node(id: $id) {
-            ... on Migration {
+            ... on RepositoryMigration {
               id
               databaseId
-              downloadUrl
-              excludeAttachments
-              excludeGitData
-              excludeOwnerProjects
-              excludeReleases
-              locked
               sourceUrl
               state
               warningsCount

@@ -7,14 +7,24 @@ const GET_MIGRATION = gql`
   query GetMigration($id: ID!) {
     migration(id: $id) {
       id
+      githubId
       repositoryName
       state
       createdAt
       completedAt
       failureReason
-      targetUrl
+      sourceUrl
       organizationName
       targetOrganizationName
+      duration
+      warningsCount
+      excludeAttachments
+      excludeGitData
+      excludeOwnerProjects
+      excludeReleases
+      locked
+      databaseId
+      downloadUrl
       migrationSource {
         name
         type
@@ -126,47 +136,114 @@ const MigrationDetails: React.FC = () => {
               </div>
             )}
 
-            {migration.targetUrl && (
+            {migration.sourceUrl && (
               <div className="bg-gray-50 dark:bg-gray-900 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Target URL</dt>
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Source URL</dt>
                 <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">
                   <a 
-                    href={migration.targetUrl} 
+                    href={migration.sourceUrl} 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
                   >
-                    {migration.targetUrl}
+                    {migration.sourceUrl}
                   </a>
                 </dd>
               </div>
             )}
 
-            {migration.failureReason && (
-              <div className="bg-gray-50 dark:bg-gray-900 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Failure reason</dt>
-                <dd className="mt-1 text-sm text-red-600 dark:text-red-300 sm:mt-0 sm:col-span-2">
-                  {migration.failureReason}
+            {migration.warningsCount > 0 && (
+              <div className="bg-white dark:bg-gray-800 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings</dt>
+                <dd className="mt-1 text-sm text-yellow-600 dark:text-yellow-400 sm:mt-0 sm:col-span-2">
+                  {migration.warningsCount} warning{migration.warningsCount !== 1 ? 's' : ''}
                 </dd>
               </div>
             )}
 
+            {migration.duration && (
+              <div className="bg-gray-50 dark:bg-gray-900 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Duration</dt>
+                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
+                  {Math.round(migration.duration / 1000 / 60)} minutes
+                </dd>
+              </div>
+            )}
+
+            {migration.targetOrganizationName && (
+              <div className="bg-white dark:bg-gray-800 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Target Organization</dt>
+                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
+                  {migration.targetOrganizationName}
+                </dd>
+              </div>
+            )}
+
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Migration Settings</dt>
+              <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
+                <ul className="space-y-2">
+                  <li>
+                    <span className={migration.excludeAttachments ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
+                      {migration.excludeAttachments ? '❌' : '✓'} Attachments
+                    </span>
+                  </li>
+                  <li>
+                    <span className={migration.excludeGitData ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
+                      {migration.excludeGitData ? '❌' : '✓'} Git Data
+                    </span>
+                  </li>
+                  <li>
+                    <span className={migration.excludeOwnerProjects ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
+                      {migration.excludeOwnerProjects ? '❌' : '✓'} Owner Projects
+                    </span>
+                  </li>
+                  <li>
+                    <span className={migration.excludeReleases ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
+                      {migration.excludeReleases ? '❌' : '✓'} Releases
+                    </span>
+                  </li>
+                </ul>
+              </dd>
+            </div>
+
             {migration.migrationSource && (
               <div className="bg-white dark:bg-gray-800 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Source</dt>
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Source Details</dt>
+                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 sm:mt-0 sm:col-span-2">
+                  <div className="space-y-2">
+                    <p><span className="font-medium">Type:</span> {migration.migrationSource.type}</p>
+                    <p><span className="font-medium">Name:</span> {migration.migrationSource.name}</p>
+                    {migration.migrationSource.url && (
+                      <p>
+                        <span className="font-medium">URL:</span>{' '}
+                        <a 
+                          href={migration.migrationSource.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+                        >
+                          {migration.migrationSource.url}
+                        </a>
+                      </p>
+                    )}
+                  </div>
+                </dd>
+              </div>
+            )}
+
+            {migration.downloadUrl && (
+              <div className="bg-gray-50 dark:bg-gray-900 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Download URL</dt>
                 <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">
-                  <div>Type: {migration.migrationSource.type}</div>
-                  <div>Name: {migration.migrationSource.name}</div>
-                  {migration.migrationSource.url && (
-                    <a 
-                      href={migration.migrationSource.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
-                    >
-                      View source
-                    </a>
-                  )}
+                  <a 
+                    href={migration.downloadUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+                  >
+                    {migration.downloadUrl}
+                  </a>
                 </dd>
               </div>
             )}

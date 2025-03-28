@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, gql } from '@apollo/client';
+import { Link } from 'react-router-dom';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -38,6 +39,7 @@ const GET_MIGRATIONS = gql`
         repositoryName
         createdAt
         state
+        warningsCount
         failureReason
         completedAt
         organizationName
@@ -57,10 +59,14 @@ const GET_MIGRATIONS = gql`
 const Dashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>('');
+  const [selectedOrg, setSelectedOrg] = useState<string>('');
   const [selectedMigrations, setSelectedMigrations] = useState<string[]>([]);
 
   const { data, loading, error } = useQuery(GET_MIGRATIONS, {
-    variables: { state: selectedStatus || undefined },
+    variables: { 
+      state: selectedStatus || undefined,
+      organizationName: selectedOrg || undefined 
+    },
   });
 
   const migrations: Migration[] = data?.allMigrations.nodes || [];
@@ -98,7 +104,12 @@ const Dashboard: React.FC = () => {
           />
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-          {migration.repositoryName}
+          {migration.organizationName}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
+          <Link to={`/migrations/${migration.githubId}`} className="hover:text-primary-600 dark:hover:text-primary-400">
+            {migration.repositoryName}
+          </Link>
         </td>
         <td className="px-6 py-4 whitespace-nowrap">
           <MigrationStatusBadge status={migration.state} />
@@ -107,7 +118,13 @@ const Dashboard: React.FC = () => {
           {new Date(migration.createdAt).toLocaleDateString()}
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-          {migration.duration || '-'}
+          {migration.warningsCount || 0}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
+          {migration.duration ? `${Math.round(migration.duration / 1000 / 60)} mins` : '-'}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-red-500 dark:text-red-400 truncate max-w-xs">
+          {migration.failureReason || '-'}
         </td>
       </tr>
     );
@@ -209,6 +226,16 @@ const Dashboard: React.FC = () => {
             <option key={status} value={status}>{status}</option>
           ))}
         </select>
+        <select
+          value={selectedOrg}
+          onChange={(e) => setSelectedOrg(e.target.value)}
+          className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+        >
+          <option value="">All Organizations</option>
+          {Array.from(new Set(migrations.map(m => m.organizationName))).map(org => (
+            <option key={org} value={org}>{org}</option>
+          ))}
+        </select>
         {selectedMigrations.length > 0 && (
           <div className="flex gap-2">
             <button
@@ -247,6 +274,9 @@ const Dashboard: React.FC = () => {
                 />
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Organization
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Repository
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -256,26 +286,32 @@ const Dashboard: React.FC = () => {
                 Created
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Warnings
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Duration
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Failure Reason
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={9} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                   Loading...
                 </td>
               </tr>
             ) : error ? (
               <tr>
-                <td colSpan={5} className="px-6 py-4 text-center text-red-500 dark:text-red-400">
+                <td colSpan={9} className="px-6 py-4 text-center text-red-500 dark:text-red-400">
                   Error loading migrations
                 </td>
               </tr>
             ) : filteredMigrations.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={9} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                   No migrations found
                 </td>
               </tr>
