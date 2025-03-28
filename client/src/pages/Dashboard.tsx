@@ -60,12 +60,21 @@ const Dashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>('');
   const [selectedOrg, setSelectedOrg] = useState<string>('');
+  const [allOrganizations, setAllOrganizations] = useState<string[]>([]);
 
   const { data, loading, error } = useQuery(GET_MIGRATIONS, {
     variables: { 
       state: selectedStatus || undefined,
       organizationName: selectedOrg || undefined 
     },
+    onCompleted: (data) => {
+      // Update allOrganizations when data is loaded
+      const orgs = Array.from(new Set(data.allMigrations.nodes.map((m: Migration) => m.organizationName)));
+      setAllOrganizations(prev => {
+        const combined = Array.from(new Set([...prev, ...orgs]));
+        return combined.sort() as string[];
+      });
+    }
   });
 
   const migrations: Migration[] = data?.allMigrations.nodes || [];
@@ -250,7 +259,7 @@ const Dashboard: React.FC = () => {
           className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
         >
           <option value="">All Organizations</option>
-          {Array.from(new Set(migrations.map(m => m.organizationName))).map(org => (
+          {allOrganizations.map(org => (
             <option key={org} value={org}>{org}</option>
           ))}
         </select>
