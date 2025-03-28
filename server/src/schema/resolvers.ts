@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { MigrationState, RepositoryMigration, OrgAccessStatus } from '../models/RepositoryMigration';
+import { MigrationState, RepositoryMigration, OrgAccessStatus, IRepositoryMigration } from '../models/RepositoryMigration';
 
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
 
@@ -114,11 +114,17 @@ export const resolvers = {
         throw new Error('Authentication token is required');
       }
 
-      // Try to find the migration in our local database first
-      const localMigration = await RepositoryMigration.findOne({ githubId: id });
+      // First try to find by MongoDB _id
+      let localMigration = await RepositoryMigration.findById(id) as IRepositoryMigration | null;
+      
+      // If not found by _id, try finding by githubId
+      if (!localMigration) {
+        localMigration = await RepositoryMigration.findOne({ githubId: id }) as IRepositoryMigration | null;
+      }
+
       if (localMigration) {
         return {
-          id: localMigration.githubId, // Return githubId as the ID
+          id: localMigration._id.toString(),
           githubId: localMigration.githubId,
           databaseId: localMigration.databaseId,
           downloadUrl: localMigration.downloadUrl,

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useQuery, gql } from '@apollo/client';
 import { Link } from 'react-router-dom';
+import { useQuery, gql } from '@apollo/client';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -60,7 +60,6 @@ const Dashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>('');
   const [selectedOrg, setSelectedOrg] = useState<string>('');
-  const [selectedMigrations, setSelectedMigrations] = useState<string[]>([]);
 
   const { data, loading, error } = useQuery(GET_MIGRATIONS, {
     variables: { 
@@ -74,14 +73,6 @@ const Dashboard: React.FC = () => {
     migration.repositoryName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleAllRows = (migration: Migration) => {
-    if (selectedMigrations.includes(migration.id)) {
-      setSelectedMigrations(selectedMigrations.filter(id => id !== migration.id));
-    } else {
-      setSelectedMigrations([...selectedMigrations, migration.id]);
-    }
-  };
-
   const calculateStats = (migrations: Migration[]) => {
     const stats = {
       total: migrations.length,
@@ -93,26 +84,58 @@ const Dashboard: React.FC = () => {
   };
 
   const renderRow = (migration: Migration) => {
+    const repoUrl = `https://github.com/${migration.organizationName}/${migration.repositoryName}`;
+    const isSuccessful = migration.state === MigrationState.SUCCEEDED;
+    const truncatedRepoName = migration.repositoryName.length > 25 
+      ? `${migration.repositoryName.substring(0, 25)}...` 
+      : migration.repositoryName;
+    
     return (
       <tr key={migration.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-        <td className="px-6 py-4 whitespace-nowrap">
-          <input
-            type="checkbox"
-            checked={selectedMigrations.includes(migration.id)}
-            onChange={handleAllRows.bind(null, migration)}
-            className="rounded border-gray-300 dark:border-gray-600"
-          />
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+          <Link 
+            to={`/migrations/${migration.id}`}
+            className="hover:text-primary-600 dark:hover:text-primary-400"
+            title={migration.repositoryName}
+          >
+            {truncatedRepoName}
+          </Link>
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
           {migration.organizationName}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-          <Link to={`/migrations/${migration.githubId}`} className="hover:text-primary-600 dark:hover:text-primary-400">
-            {migration.repositoryName}
-          </Link>
-        </td>
         <td className="px-6 py-4 whitespace-nowrap">
           <MigrationStatusBadge status={migration.state} />
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-center">
+          {isSuccessful ? (
+            <a
+              href={repoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+              title="Open in GitHub"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
+              </svg>
+            </a>
+          ) : (
+            <span className="text-gray-400 dark:text-gray-600" title="Repository not yet available">
+              -
+            </span>
+          )}
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
           {new Date(migration.createdAt).toLocaleDateString()}
@@ -143,11 +166,6 @@ const Dashboard: React.FC = () => {
         tension: 0.1,
       },
     ],
-  };
-
-  const handleBulkStatusUpdate = async (newStatus: MigrationState) => {
-    // Implement bulk update logic here
-    console.log(`Updating ${selectedMigrations.length} migrations to ${newStatus}`);
   };
 
   return (
@@ -236,90 +254,65 @@ const Dashboard: React.FC = () => {
             <option key={org} value={org}>{org}</option>
           ))}
         </select>
-        {selectedMigrations.length > 0 && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleBulkStatusUpdate(MigrationState.SUCCEEDED)}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              Mark Selected as Succeeded
-            </button>
-            <button
-              onClick={() => handleBulkStatusUpdate(MigrationState.FAILED)}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-            >
-              Mark Selected as Failed
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Migrations Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-card overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-900">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                <input
-                  type="checkbox"
-                  checked={selectedMigrations.length === filteredMigrations.length}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedMigrations(filteredMigrations.map((m: Migration) => m.id));
-                    } else {
-                      setSelectedMigrations([]);
-                    }
-                  }}
-                  className="rounded border-gray-300 dark:border-gray-600"
-                />
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Organization
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Repository
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Created
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Warnings
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Duration
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Failure Reason
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {loading ? (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-card">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                <td colSpan={9} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-                  Loading...
-                </td>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Repository
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Organization
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  GitHub
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Created
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Warnings
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Duration
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Failure Reason
+                </th>
               </tr>
-            ) : error ? (
-              <tr>
-                <td colSpan={9} className="px-6 py-4 text-center text-red-500 dark:text-red-400">
-                  Error loading migrations
-                </td>
-              </tr>
-            ) : filteredMigrations.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-                  No migrations found
-                </td>
-              </tr>
-            ) : (
-              filteredMigrations.map((m: Migration) => renderRow(m))
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                    Loading...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-4 text-center text-red-500 dark:text-red-400">
+                    Error loading migrations
+                  </td>
+                </tr>
+              ) : filteredMigrations.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                    No migrations found
+                  </td>
+                </tr>
+              ) : (
+                filteredMigrations.map((m: Migration) => renderRow(m))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

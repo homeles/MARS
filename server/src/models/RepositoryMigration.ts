@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema, Types } from 'mongoose';
 
 export enum MigrationState {
   PENDING = 'PENDING',
@@ -16,8 +16,9 @@ export interface IMigrationSource {
 }
 
 export interface IRepositoryMigration extends Document {
+  _id: Types.ObjectId;
   githubId: string;
-  databaseId?: string;  // Changed from number to string
+  databaseId?: string;
   downloadUrl?: string;
   excludeAttachments: boolean;
   excludeGitData: boolean;
