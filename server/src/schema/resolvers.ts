@@ -3,6 +3,61 @@ import { MigrationState, RepositoryMigration, OrgAccessStatus, IRepositoryMigrat
 
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
 
+interface GitHubPageInfo {
+  hasNextPage: boolean;
+  endCursor: string | null;
+}
+
+interface GitHubError {
+  message: string;
+}
+
+interface GitHubApiResponse<T> {
+  data: T;
+  errors?: GitHubError[];
+}
+
+interface GitHubOrganizationData {
+  enterprise: {
+    organizations: {
+      nodes: Array<{
+        id: string;
+        login: string;
+        name: string;
+      }>;
+      pageInfo: GitHubPageInfo;
+    };
+  };
+}
+
+interface GitHubMigrationData {
+  organization: {
+    repositoryMigrations: {
+      nodes: Array<{
+        id: string;
+        databaseId: string;
+        sourceUrl: string;
+        state: string;
+        warningsCount: number;
+        failureReason?: string;
+        createdAt: string;
+        completedAt?: string;
+        repositoryName: string;
+        migrationSource?: {
+          id: string;
+          name: string;
+          type: string;
+          url: string;
+        };
+      }>;
+      pageInfo: GitHubPageInfo;
+    };
+  };
+}
+
+type GitHubOrganizationResponse = GitHubApiResponse<GitHubOrganizationData>;
+type GitHubMigrationResponse = GitHubApiResponse<GitHubMigrationData>;
+
 interface ResolverContext {
   token: string;
 }
@@ -31,6 +86,138 @@ interface Migration {
     type: string;
     url: string;
   };
+}
+
+async function fetchAllOrganizations(enterpriseName: string, token: string) {
+  const query = `
+    query getOrganizations($enterprise: String!) {
+      enterprise(slug: $enterprise) {
+        organizations(first: 100) {
+          nodes {
+            id
+            login
+            name
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const response = await axios.post(
+      GITHUB_GRAPHQL_URL,
+      {
+        query,
+        variables: { enterprise: enterpriseName }
+      },
+      {
+        headers: {
+          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      }
+    );
+
+    if (response.data.errors) {
+      throw new Error(response.data.errors[0].message);
+    }
+
+    return response.data.data.enterprise.organizations.nodes;
+  } catch (error) {
+    console.error('Error fetching organizations:', error);
+    throw error;
+  }
+}
+
+async function fetchOrganizationMigrations(orgLogin: string, token: string) {
+  const query = `
+    query getOrgMigrations($org: String!) {
+      organization(login: $org) {
+        repositoryMigrations(first: 100) {
+          nodes {
+            id
+            databaseId
+            downloadUrl
+            excludeAttachments
+            excludeGitData
+            excludeOwnerProjects
+            excludeReleases
+            locked
+            sourceUrl
+            state
+            warningsCount
+            failureReason
+            createdAt
+            completedAt
+            repositoryName
+            migrationSource {
+              id
+              name
+              type
+              url
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const response = await axios.post(
+      GITHUB_GRAPHQL_URL,
+      {
+        query,
+        variables: { org: orgLogin }
+      },
+      {
+        headers: {
+          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      }
+    );
+
+    if (response.data.errors) {
+      throw new Error(response.data.errors[0].message);
+    }
+
+    return response.data.data.organization.repositoryMigrations.nodes;
+  } catch (error) {
+    console.error('Error fetching migrations:', error);
+    throw error;
+  }
+}
+
+async function processMigration(migration: any, enterpriseName: string, orgLogin: string) {
+  try {
+    await RepositoryMigration.findOneAndUpdate(
+      { githubId: migration.id },
+      {
+        githubId: migration.id,
+        databaseId: migration.databaseId,
+        downloadUrl: migration.downloadUrl,
+        excludeAttachments: migration.excludeAttachments,
+        excludeGitData: migration.excludeGitData,
+        excludeOwnerProjects: migration.excludeOwnerProjects,
+        excludeReleases: migration.excludeReleases,
+        locked: migration.locked,
+        sourceUrl: migration.sourceUrl,
+        state: migration.state,
+        warningsCount: migration.warningsCount,
+        failureReason: migration.failureReason,
+        createdAt: new Date(migration.createdAt),
+        completedAt: migration.completedAt ? new Date(migration.completedAt) : undefined,
+        repositoryName: migration.repositoryName,
+        enterpriseName: enterpriseName,
+        organizationName: orgLogin,
+        migrationSource: migration.migrationSource
+      },
+      { upsert: true, new: true }
+    );
+  } catch (error) {
+    console.error('Error processing migration:', error);
+    throw error;
+  }
 }
 
 export const resolvers = {
@@ -324,133 +511,44 @@ export const resolvers = {
   },
 
   Mutation: {
-    syncMigrations: async (_: unknown, { enterpriseName, token }: { enterpriseName: string; token: string }) => {
+    syncMigrations: async (_: any, { enterpriseName, token }: { enterpriseName: string, token: string }) => {
       try {
-        // Check if we have admin access to the organization
-        const checkPermissionQuery = `
-          query checkOrgPermission($organization: String!) {
-            organization(login: $organization) {
-              viewerCanAdminister
-            }
-          }
-        `;
-
-        const permissionResponse = await axios.post(
-          GITHUB_GRAPHQL_URL,
-          {
-            query: checkPermissionQuery,
-            variables: { 
-              organization: enterpriseName
-            }
-          },
-          {
-            headers: {
-              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            }
-          }
-        );
-
-        if (permissionResponse.data.errors) {
-          throw new Error(permissionResponse.data.errors[0].message);
-        }
-
-        const hasAdminAccess = permissionResponse.data.data.organization?.viewerCanAdminister;
+        console.log(`[Sync] Starting migration sync for enterprise: ${enterpriseName}`);
         
-        if (!hasAdminAccess) {
-          return {
-            success: false,
-            message: `You don't have admin access to the organization ${enterpriseName}. Please make sure you have the correct permissions.`
-          };
-        }
+        // Fetch organizations
+        console.log(`[Sync] Fetching organizations for enterprise ${enterpriseName}`);
+        const organizations = await fetchAllOrganizations(enterpriseName, token);
+        console.log(`[Sync] Found ${organizations.length} organizations to process`);
 
-        // If we have admin access, proceed with migration sync
-        const query = `
-          query getRepositoryMigrations($organization: String!, $first: Int!) {
-            organization(login: $organization) {
-              repositoryMigrations(first: $first, orderBy: {field: CREATED_AT, direction: DESC}) {
-                nodes {
-                  id
-                  databaseId
-                  sourceUrl
-                  state
-                  warningsCount
-                  failureReason
-                  createdAt
-                  repositoryName
-                  migrationSource {
-                    id
-                    name
-                    type
-                    url
-                  }
-                }
+        // Process each organization
+        for (const org of organizations) {
+          console.log(`[Sync] Processing organization: ${org.login}`);
+          try {
+            const migrations = await fetchOrganizationMigrations(org.login, token);
+            console.log(`[Sync] Processing ${migrations.length} migrations for ${org.login}`);
+
+            // Process migrations for this org
+            for (const migration of migrations) {
+              try {
+                await processMigration(migration, enterpriseName, org.login);
+              } catch (migrationError) {
+                console.error(`[Sync] Error processing migration ${migration.id} for ${org.login}:`, migrationError);
               }
             }
+            
+            console.log(`[Sync] Completed processing organization: ${org.login}`);
+          } catch (orgError) {
+            console.error(`[Sync] Error processing organization ${org.login}:`, orgError);
           }
-        `;
-
-        const response = await axios.post(
-          GITHUB_GRAPHQL_URL,
-          {
-            query,
-            variables: { 
-              organization: enterpriseName,
-              first: 100
-            }
-          },
-          {
-            headers: {
-              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            }
-          }
-        );
-
-        if (response.data.errors) {
-          const errorMessage = response.data.errors[0].message;
-          throw new Error(`Failed to fetch migrations: ${errorMessage}`);
         }
 
-        const migrations = response.data.data.organization.repositoryMigrations.nodes;
-        
-        if (!migrations || migrations.length === 0) {
-          return {
-            success: true,
-            message: `No migrations found for ${enterpriseName}`
-          };
-        }
-
-        // Save migrations to database
-        for (const migration of migrations) {
-          await RepositoryMigration.findOneAndUpdate(
-            { githubId: migration.id },
-            {
-              githubId: migration.id,
-              databaseId: migration.databaseId,
-              sourceUrl: migration.sourceUrl,
-              state: migration.state,
-              warningsCount: migration.warningsCount,
-              failureReason: migration.failureReason,
-              createdAt: new Date(migration.createdAt),
-              repositoryName: migration.repositoryName,
-              organizationName: enterpriseName,
-              enterpriseName: enterpriseName,
-              migrationSource: migration.migrationSource
-            },
-            { upsert: true, new: true }
-          );
-        }
-
-        return {
-          success: true,
-          message: `Successfully synced ${migrations.length} migrations from ${enterpriseName}`
-        };
+        console.log(`[Sync] Completed full sync for enterprise: ${enterpriseName}`);
+        return { success: true, message: 'Sync completed successfully' };
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-        return {
-          success: false,
-          message: `Error syncing migrations: ${errorMessage}`
+        console.error(`[Sync] Error during sync process:`, error);
+        return { 
+          success: false, 
+          message: error instanceof Error ? error.message : 'An unknown error occurred' 
         };
       }
     },

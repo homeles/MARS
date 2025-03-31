@@ -59,10 +59,12 @@ export const typeDefs = gql`
 
   type OrganizationConnection {
     nodes: [Organization!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
   }
 
   type Enterprise {
-    organizations: OrganizationConnection!
+    organizations(first: Int!, after: String): OrganizationConnection!
   }
 
   type OrgAccessStatus {

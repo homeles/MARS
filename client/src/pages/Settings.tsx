@@ -19,7 +19,7 @@ interface AccessStatus {
 const GET_ENTERPRISE_ORGS = gql`
   query getOrganizations($enterprise: String!) {
     enterprise(slug: $enterprise) {
-      organizations {
+      organizations(first: 100) {
         nodes {
           id
           login

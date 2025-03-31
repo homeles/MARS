@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
 import { Line } from 'react-chartjs-2';
 import {
@@ -57,10 +57,29 @@ const GET_MIGRATIONS = gql`
 `;
 
 const Dashboard: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>('');
-  const [selectedOrg, setSelectedOrg] = useState<string>('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
+  const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>(
+    (searchParams.get('status') as MigrationState) || ''
+  );
+  const [selectedOrg, setSelectedOrg] = useState(searchParams.get('org') || '');
   const [allOrganizations, setAllOrganizations] = useState<string[]>([]);
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setSelectedStatus('');
+    setSelectedOrg('');
+    setSearchParams({}, { replace: true });
+  };
+
+  // Update URL when filters change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('q', searchQuery);
+    if (selectedStatus) params.set('status', selectedStatus);
+    if (selectedOrg) params.set('org', selectedOrg);
+    setSearchParams(params, { replace: true });
+  }, [searchQuery, selectedStatus, selectedOrg, setSearchParams]);
 
   const { data, loading, error } = useQuery(GET_MIGRATIONS, {
     variables: { 
@@ -263,6 +282,29 @@ const Dashboard: React.FC = () => {
             <option key={org} value={org}>{org}</option>
           ))}
         </select>
+        {(searchQuery || selectedStatus || selectedOrg) && (
+          <button
+            onClick={clearAllFilters}
+            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 flex items-center gap-2"
+            title="Clear all filters"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Migrations Table */}
