@@ -1,50 +1,11 @@
 import React, { useState } from 'react';
-import { gql, useQuery, useMutation } from '@apollo/client';
+import { useQuery, useMutation } from '@apollo/client';
 import { logger } from '../utils/logger';
-
-interface Organization {
-  id: string;
-  login: string;
-  name?: string;
-}
-
-interface AccessStatus {
-  orgId: string;
-  orgLogin: string;
-  hasAccess: boolean;
-  errorMessage?: string;
-  lastChecked: string;
-}
-
-const GET_ENTERPRISE_ORGS = gql`
-  query getOrganizations($enterprise: String!) {
-    enterprise(slug: $enterprise) {
-      organizations(first: 100) {
-        nodes {
-          id
-          login
-          name
-        }
-      }
-    }
-  }
-`;
-
-const GET_ORG_ACCESS_STATUS = gql`
-  query getOrgAccessStatus($enterpriseName: String!) {
-    orgAccessStatus(enterpriseName: $enterpriseName) {
-      orgId
-      orgLogin
-      hasAccess
-      errorMessage
-      lastChecked
-    }
-  }
-`;
+import { gql } from '@apollo/client';
 
 const SYNC_MIGRATIONS = gql`
-  mutation SyncMigrations($enterpriseName: String!, $token: String!) {
-    syncMigrations(enterpriseName: $enterpriseName, token: $token) {
+  mutation SyncMigrations($enterpriseName: String!, $token: String!, $selectedOrganizations: [String!]) {
+    syncMigrations(enterpriseName: $enterpriseName, token: $token, selectedOrganizations: $selectedOrganizations) {
       success
       message
     }
@@ -52,9 +13,30 @@ const SYNC_MIGRATIONS = gql`
 `;
 
 const CHECK_ORG_ACCESS = gql`
-  mutation checkOrgAccess($enterpriseName: String!, $token: String!) {
+  mutation CheckOrgAccess($enterpriseName: String!, $token: String!) {
     checkOrgAccess(enterpriseName: $enterpriseName, token: $token) {
-      orgId
+      orgLogin
+      hasAccess
+      errorMessage
+    }
+  }
+`;
+
+const GET_ENTERPRISE_ORGS = gql`
+  query GetEnterpriseOrgs($enterpriseName: String!) {
+    enterprise(slug: $enterpriseName) {
+      organizations(first: 100) {
+        nodes {
+          login
+        }
+      }
+    }
+  }
+`;
+
+const GET_ORG_ACCESS_STATUS = gql`
+  query GetOrgAccessStatus($enterpriseName: String!) {
+    orgAccessStatus(enterpriseName: $enterpriseName) {
       orgLogin
       hasAccess
       errorMessage
@@ -63,27 +45,58 @@ const CHECK_ORG_ACCESS = gql`
   }
 `;
 
-const Settings: React.FC = () => {
-  const enterpriseName = import.meta.env.VITE_GITHUB_ENTERPRISE_NAME;
-  const token = import.meta.env.VITE_GITHUB_TOKEN;
-  const hasToken = !!token;
+interface AccessStatus {
+  orgLogin: string;
+  hasAccess: boolean;
+}
+
+interface LogData {
+  error: string;
+}
+
+export const Settings: React.FC = () => {
+  const [selectedEnterprise] = useState<string>(process.env.GITHUB_ENTERPRISE_NAME || '');
+  const [accessToken] = useState<string>(process.env.GITHUB_TOKEN || '');
   const [checkingAccess, setCheckingAccess] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<Error | null>(null);
+  const [selectedOrgs, setSelectedOrgs] = useState<string[]>([]);
   
-  const [syncMigrations, { loading: syncing, error: syncError }] = useMutation(SYNC_MIGRATIONS);
+  const [syncMigrations] = useMutation(SYNC_MIGRATIONS);
   const [checkOrgAccessMutation] = useMutation(CHECK_ORG_ACCESS);
-  
-  const { data: orgsData, loading: orgsLoading, error: orgsError } = useQuery(GET_ENTERPRISE_ORGS, {
-    variables: { enterprise: enterpriseName },
-    skip: !enterpriseName || !hasToken
+
+  const { data: organizationsData, loading: orgsLoading, error: orgsError } = useQuery(GET_ENTERPRISE_ORGS, {
+    variables: { enterpriseName: selectedEnterprise },
+    skip: !selectedEnterprise || !accessToken
   });
+
+  const organizations = organizationsData?.enterprise?.organizations?.nodes?.map((node: { login: string }) => node.login) || [];
 
   const { data: accessData, refetch: refetchAccess } = useQuery(GET_ORG_ACCESS_STATUS, {
-    variables: { enterpriseName },
-    skip: !enterpriseName
+    variables: { enterpriseName: selectedEnterprise },
+    skip: !selectedEnterprise
   });
 
-  const orgs: Organization[] = orgsData?.enterprise?.organizations?.nodes || [];
   const accessStatuses: AccessStatus[] = accessData?.orgAccessStatus || [];
+
+  const handleOrgSelection = (orgLogin: string, checked: boolean) => {
+    if (checked) {
+      setSelectedOrgs([...selectedOrgs, orgLogin]);
+    } else {
+      setSelectedOrgs(selectedOrgs.filter(org => org !== orgLogin));
+    }
+  };
+
+  const toggleAllOrgs = (checked: boolean) => {
+    if (checked) {
+      const accessibleOrgs = accessStatuses
+        .filter(status => status.hasAccess)
+        .map(status => status.orgLogin);
+      setSelectedOrgs(accessibleOrgs);
+    } else {
+      setSelectedOrgs([]);
+    }
+  };
 
   const checkOrgAccess = async () => {
     setCheckingAccess(true);
@@ -91,48 +104,48 @@ const Settings: React.FC = () => {
     try {
       await checkOrgAccessMutation({
         variables: {
-          enterpriseName,
-          token
+          enterpriseName: selectedEnterprise,
+          token: accessToken
         }
       });
       
       await refetchAccess();
     } catch (error) {
-      logger.error('Failed to check organization access', {
+      const errorData: LogData = {
         error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      };
+      logger.error('Failed to check organization access', errorData);
     } finally {
       setCheckingAccess(false);
     }
   };
 
   const handleSync = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    
     try {
-      const accessibleOrgs = accessStatuses
-        .filter((status: AccessStatus) => status.hasAccess)
-        .map((status: AccessStatus) => status.orgLogin);
+      const result = await syncMigrations({
+        variables: {
+          enterpriseName: selectedEnterprise,
+          token: accessToken,
+          selectedOrganizations: selectedOrgs.length > 0 ? selectedOrgs : null
+        }
+      });
 
-      const results = await Promise.allSettled(
-        accessibleOrgs.map((org: string) =>
-          syncMigrations({
-            variables: {
-              enterpriseName: org,
-              token
-            }
-          })
-        )
-      );
-
-      const successful = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
-
-      if (failed === 0) {
-        alert(`Successfully synced migrations for ${successful} organizations!`);
+      if (result.data.syncMigrations.success) {
+        alert('Successfully synced migrations!');
       } else {
-        alert(`Synced migrations for ${successful} organizations. Failed for ${failed} organizations.`);
+        alert(`Error syncing migrations: ${result.data.syncMigrations.message}`);
       }
     } catch (error) {
-      console.error('Error syncing migrations:', error);
+      setSyncError(error instanceof Error ? error : new Error('Unknown error occurred'));
+      const logData: LogData = {
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+      logger.error('Error syncing migrations:', logData);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -146,9 +159,9 @@ const Settings: React.FC = () => {
           <div className="flex gap-4">
             <button
               onClick={checkOrgAccess}
-              disabled={checkingAccess || !hasToken}
+              disabled={checkingAccess || !accessToken}
               className={`px-4 py-2 rounded-md text-white ${
-                !checkingAccess && hasToken
+                !checkingAccess && accessToken
                   ? 'bg-blue-600 hover:bg-blue-700'
                   : 'bg-gray-400 cursor-not-allowed'
               }`}
@@ -157,20 +170,20 @@ const Settings: React.FC = () => {
             </button>
             <button
               onClick={handleSync}
-              disabled={!hasToken || syncing || accessStatuses.filter((status: AccessStatus) => status.hasAccess).length === 0}
+              disabled={!accessToken || syncing || selectedOrgs.length === 0}
               className={`px-4 py-2 rounded-md text-white ${
-                hasToken && !syncing && accessStatuses.some((status: AccessStatus) => status.hasAccess)
+                accessToken && !syncing && selectedOrgs.length > 0
                   ? 'bg-primary-600 hover:bg-primary-700'
                   : 'bg-gray-400 cursor-not-allowed'
               }`}
             >
-              {syncing ? 'Syncing...' : 'Sync Migrations'}
+              {syncing ? 'Syncing...' : 'Sync Selected Organizations'}
             </button>
           </div>
         </div>
         
         {syncError && (
-          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-300 rounded-md">
+          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-300 rounded-md">
             Error syncing migrations: {syncError.message}
           </div>
         )}
@@ -178,92 +191,86 @@ const Settings: React.FC = () => {
         <div className="space-y-4">
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">GitHub Token Status</h3>
-            <p className={`mt-1 text-sm ${hasToken ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {hasToken ? '✓ Token is configured' : '✗ Token is not configured'}
+            <p className={`mt-1 text-sm ${accessToken ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+              {accessToken ? '✓ Token is configured' : '✗ Token is not configured'}
             </p>
           </div>
 
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Enterprise Name</h3>
-            <p className={`mt-1 text-sm ${enterpriseName ? 'text-gray-900 dark:text-gray-100' : 'text-red-600 dark:text-red-400'}`}>
-              {enterpriseName || 'Not configured'}
+            <p className={`mt-1 text-sm ${selectedEnterprise ? 'text-gray-900 dark:text-gray-100' : 'text-red-600 dark:text-red-400'}`}>
+              {selectedEnterprise || 'Not configured'}
             </p>
           </div>
 
-          {orgsLoading && (
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              Loading organizations...
-            </div>
-          )}
-
-          {orgsError && (
-            <div className="text-sm text-red-600 dark:text-red-400">
-              Error: {orgsError.message}
-            </div>
-          )}
-
-          {orgs.length > 0 && (
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Organizations</h3>
-              <div className="space-y-2">
-                {orgs.map((org: Organization) => {
-                  const accessStatus = accessStatuses.find((status: AccessStatus) => status.orgLogin === org.login);
-                  return (
-                    <div key={org.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 rounded">
-                      <span className="text-sm text-gray-900 dark:text-gray-100">{org.login}</span>
-                      <div className="flex items-center gap-2">
-                        {accessStatus?.errorMessage && (
-                          <span className="text-xs text-red-500" title={accessStatus.errorMessage}>
-                            ⓘ
-                          </span>
-                        )}
-                        {accessStatus && (
-                          <span className={`text-sm ${
-                            accessStatus.hasAccess 
-                              ? 'text-green-600 dark:text-green-400' 
-                              : 'text-red-600 dark:text-red-400'
-                          }`}>
-                            {accessStatus.hasAccess ? '✓ Has access' : '✗ No access'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+          <div className="mt-6">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Organizations</h3>
+            
+            {orgsLoading ? (
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Loading organizations...
               </div>
-              {accessStatuses.filter((status: AccessStatus) => status.hasAccess).length === 0 && (
-                <p className="mt-2 text-sm text-yellow-600 dark:text-yellow-400">
-                  Warning: Your token doesn't have the required permissions for any organizations. 
-                  Please ensure your token has 'repo' and 'admin:org' scopes.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-md">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">How to Configure</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-            The application uses environment variables for configuration. To update the settings:
-          </p>
-          <ol className="list-decimal list-inside text-sm text-gray-600 dark:text-gray-300 space-y-2">
-            <li>Create a <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">.env</code> file in the root directory</li>
-            <li>Copy the contents from <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">.env.example</code></li>
-            <li>Update the values for <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">GITHUB_TOKEN</code> and <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">GITHUB_ENTERPRISE_NAME</code></li>
-            <li>Restart the application</li>
-          </ol>
-        </div>
-
-        <div className="mt-6">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Required Token Permissions</h3>
-          <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1">
-            <li><code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">read:enterprise</code> - For listing organizations</li>
-            <li><code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">repo</code> - For accessing repository migrations</li>
-            <li><code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">admin:org</code> - For accessing organization migrations</li>
-          </ul>
+            ) : orgsError ? (
+              <div className="text-sm text-red-600 dark:text-red-400">
+                Error: {orgsError.message}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Select All Checkbox */}
+                <div className="flex items-center mb-4">
+                  <input
+                    type="checkbox"
+                    id="selectAll"
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-4 w-4"
+                    checked={selectedOrgs.length === accessStatuses.filter(status => status.hasAccess).length}
+                    onChange={(e) => toggleAllOrgs(e.target.checked)}
+                  />
+                  <label htmlFor="selectAll" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                    Select All Organizations
+                  </label>
+                </div>
+                
+                {/* Organization List */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {organizations.map((org: string) => {
+                    const status = accessStatuses.find(s => s.orgLogin === org);
+                    const hasAccess = status?.hasAccess ?? false;
+                    
+                    return (
+                      <div key={org} className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          id={`org-${org}`}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-4 w-4"
+                          checked={selectedOrgs.includes(org)}
+                          onChange={(e) => handleOrgSelection(org, e.target.checked)}
+                          disabled={!hasAccess}
+                        />
+                        <label
+                          htmlFor={`org-${org}`}
+                          className={`text-sm ${
+                            hasAccess
+                              ? 'text-gray-700 dark:text-gray-300'
+                              : 'text-gray-400 dark:text-gray-600'
+                          }`}
+                        >
+                          {org}
+                          {!hasAccess && (
+                            <span className="ml-2 text-xs text-red-500">
+                              (No Access)
+                            </span>
+                          )}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-      
+
       <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
         <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">About Repository Migrations</h2>
         <p className="text-gray-600 dark:text-gray-300 mb-4">

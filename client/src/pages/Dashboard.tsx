@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
 import { Line } from 'react-chartjs-2';
 import {
@@ -15,7 +15,9 @@ import {
 import StatsCard from '../components/StatsCard';
 import MigrationStatusBadge from '../components/MigrationStatusBadge';
 import { MigrationState, Migration } from '../types';
+import { logger } from '../utils/logger';
 
+// Register ChartJS components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -26,89 +28,133 @@ ChartJS.register(
   Legend
 );
 
-const GET_MIGRATIONS = gql`
-  query GetMigrations($state: MigrationState, $enterpriseName: String, $organizationName: String) {
-    allMigrations(
-      state: $state
-      enterpriseName: $enterpriseName
-      organizationName: $organizationName
-    ) {
-      nodes {
-        id
-        githubId
-        repositoryName
-        createdAt
-        state
-        warningsCount
-        failureReason
-        completedAt
-        organizationName
-        targetOrganizationName
-        duration
-        enterpriseName
+// Get organizations query
+const GET_ORGANIZATIONS = gql`
+  query GetOrganizations($enterprise: String!) {
+    enterprise(slug: $enterprise) {
+      organizations(first: 100) {
+        nodes {
+          login
+        }
       }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-      totalCount
     }
   }
 `;
 
-const Dashboard: React.FC = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
-  const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>(
-    (searchParams.get('status') as MigrationState) || ''
-  );
-  const [selectedOrg, setSelectedOrg] = useState(searchParams.get('org') || '');
-  const [allOrganizations, setAllOrganizations] = useState<string[]>([]);
+export const Dashboard: React.FC = () => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>('');
+  const [selectedOrg, setSelectedOrg] = useState('');
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Fetch organizations for the dropdown
+  const { data: organizationsData } = useQuery(GET_ORGANIZATIONS, {
+    variables: { enterprise: import.meta.env.VITE_GITHUB_ENTERPRISE_NAME || '' }
+  });
+  const organizations = organizationsData?.enterprise?.organizations?.nodes?.map((node: { login: string }) => node.login) || [];
 
   const clearAllFilters = () => {
     setSearchQuery('');
     setSelectedStatus('');
     setSelectedOrg('');
-    setSearchParams({}, { replace: true });
   };
 
-  // Update URL when filters change
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (searchQuery) params.set('q', searchQuery);
-    if (selectedStatus) params.set('status', selectedStatus);
-    if (selectedOrg) params.set('org', selectedOrg);
-    setSearchParams(params, { replace: true });
-  }, [searchQuery, selectedStatus, selectedOrg, setSearchParams]);
+  const GET_MIGRATIONS = gql`
+    query GetMigrations(
+      $state: MigrationState, 
+      $enterpriseName: String, 
+      $organizationName: String,
+      $first: Int = 50,
+      $after: String
+    ) {
+      allMigrations(
+        state: $state
+        enterpriseName: $enterpriseName
+        organizationName: $organizationName
+        first: $first
+        after: $after
+      ) {
+        nodes {
+          id
+          githubId
+          repositoryName
+          createdAt
+          state
+          warningsCount
+          failureReason
+          completedAt
+          organizationName
+          targetOrganizationName
+          duration
+          enterpriseName
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        totalCount
+      }
+    }
+  `;
 
-  const { data, loading, error } = useQuery(GET_MIGRATIONS, {
+  const calculateStats = (migrations: Migration[]) => {
+    const total = migrations.length;
+    const completed = migrations.filter(m => m.state === 'SUCCEEDED').length;
+    const failed = migrations.filter(m => m.state === 'FAILED').length;
+    const inProgress = migrations.filter(m => m.state === 'IN_PROGRESS').length;
+    const succeeded = completed; // Add succeeded for consistency
+
+    return { total, completed, failed, inProgress, succeeded };
+  };
+
+  const { data, loading, error, fetchMore } = useQuery(GET_MIGRATIONS, {
     variables: { 
       state: selectedStatus || undefined,
-      organizationName: selectedOrg || undefined 
-    },
-    onCompleted: (data) => {
-      // Update allOrganizations when data is loaded
-      const orgs = Array.from(new Set(data.allMigrations.nodes.map((m: Migration) => m.organizationName)));
-      setAllOrganizations(prev => {
-        const combined = Array.from(new Set([...prev, ...orgs]));
-        return combined.sort() as string[];
-      });
+      organizationName: selectedOrg || undefined,
+      first: 50
     }
   });
 
-  const migrations: Migration[] = data?.allMigrations.nodes || [];
+  const migrations: Migration[] = data?.allMigrations?.nodes || [];
+  const pageInfo = data?.allMigrations?.pageInfo;
+  const totalCount = data?.allMigrations?.totalCount || 0;
+  
   const filteredMigrations = migrations.filter(migration =>
     migration.repositoryName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const calculateStats = (migrations: Migration[]) => {
-    const stats = {
-      total: migrations.length,
-      succeeded: migrations.filter((m: Migration) => m.state === MigrationState.SUCCEEDED).length,
-      failed: migrations.filter((m: Migration) => m.state === MigrationState.FAILED).length,
-      inProgress: migrations.filter((m: Migration) => m.state === MigrationState.IN_PROGRESS).length,
-    };
-    return stats;
+  const loadMoreMigrations = async () => {
+    if (!pageInfo?.hasNextPage) return;
+    
+    setLoadingMore(true);
+    try {
+      await fetchMore({
+        variables: {
+          after: pageInfo.endCursor,
+          state: selectedStatus || undefined,
+          organizationName: selectedOrg || undefined,
+          first: 50
+        },
+        updateQuery: (prev, { fetchMoreResult }) => {
+          if (!fetchMoreResult) return prev;
+          return {
+            allMigrations: {
+              ...fetchMoreResult.allMigrations,
+              nodes: [
+                ...prev.allMigrations.nodes,
+                ...fetchMoreResult.allMigrations.nodes
+              ]
+            }
+          };
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to load more migrations', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const renderRow = (migration: Migration) => {
@@ -278,7 +324,7 @@ const Dashboard: React.FC = () => {
           className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
         >
           <option value="">All Organizations</option>
-          {allOrganizations.map(org => (
+          {organizations.map((org: string) => (
             <option key={org} value={org}>{org}</option>
           ))}
         </select>
@@ -340,7 +386,7 @@ const Dashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {loading ? (
+              {loading && !loadingMore ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                     Loading...
@@ -359,11 +405,39 @@ const Dashboard: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredMigrations.map((m: Migration) => renderRow(m))
+                <>
+                  {filteredMigrations.map((m: Migration) => renderRow(m))}
+                  {loadingMore && (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                        Loading more...
+                      </td>
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
         </div>
+        
+        {pageInfo?.hasNextPage && (
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={loadMoreMigrations}
+              disabled={loadingMore}
+              className={`w-full px-4 py-2 text-sm rounded-md text-white ${
+                !loadingMore
+                  ? 'bg-primary-600 hover:bg-primary-700'
+                  : 'bg-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {loadingMore ? 'Loading...' : 'Load More Migrations'}
+            </button>
+            <p className="mt-2 text-sm text-center text-gray-500 dark:text-gray-400">
+              Showing {migrations.length} of {totalCount} migrations
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,12 +1,12 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
-import Dashboard from './pages/Dashboard';
+import { Dashboard } from './pages/Dashboard';
 import MigrationDetails from './pages/MigrationDetails';
-import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
+import Settings from './pages/Settings';
 
-const App: React.FC = () => {
+export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navbar />

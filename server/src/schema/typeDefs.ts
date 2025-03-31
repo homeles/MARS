@@ -20,6 +20,22 @@ export const typeDefs = gql`
     totalCount: Int!
   }
 
+  type OrganizationConnection {
+    nodes: [Organization!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
+  }
+
+  type Organization {
+    id: ID!
+    login: String!
+    name: String
+  }
+
+  type Enterprise {
+    organizations(first: Int!, after: String): OrganizationConnection!
+  }
+
   type MigrationSource {
     id: ID!
     name: String!
@@ -51,22 +67,6 @@ export const typeDefs = gql`
     migrationSource: MigrationSource
   }
 
-  type Organization {
-    id: ID!
-    login: String!
-    name: String
-  }
-
-  type OrganizationConnection {
-    nodes: [Organization!]!
-    pageInfo: PageInfo!
-    totalCount: Int!
-  }
-
-  type Enterprise {
-    organizations(first: Int!, after: String): OrganizationConnection!
-  }
-
   type OrgAccessStatus {
     orgId: ID!
     orgLogin: String!
@@ -80,7 +80,7 @@ export const typeDefs = gql`
     enterprise(slug: String!): Enterprise
     allMigrations(
       state: MigrationState
-      first: Int
+      first: Int = 50
       after: String
       enterpriseName: String
       organizationName: String
@@ -104,7 +104,7 @@ export const typeDefs = gql`
   }
 
   type Mutation {
-    syncMigrations(enterpriseName: String!, token: String!): MigrationResponse!
+    syncMigrations(enterpriseName: String!, token: String!, selectedOrganizations: [String!]): MigrationResponse!
     updateMigrationState(githubId: ID!, state: MigrationState!): RepositoryMigration
     checkOrgAccess(enterpriseName: String!, token: String!): [OrgAccessStatus!]!
   }

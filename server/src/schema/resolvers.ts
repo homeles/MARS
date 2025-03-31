@@ -1,7 +1,14 @@
+import mongoose from 'mongoose';
 import axios from 'axios';
 import { MigrationState, RepositoryMigration, OrgAccessStatus, IRepositoryMigration } from '../models/RepositoryMigration';
 
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
+
+interface Organization {
+  id: string;
+  login: string;
+  name?: string;
+}
 
 interface GitHubPageInfo {
   hasNextPage: boolean;
@@ -20,11 +27,7 @@ interface GitHubApiResponse<T> {
 interface GitHubOrganizationData {
   enterprise: {
     organizations: {
-      nodes: Array<{
-        id: string;
-        login: string;
-        name: string;
-      }>;
+      nodes: Array<Organization>;
       pageInfo: GitHubPageInfo;
     };
   };
@@ -130,62 +133,117 @@ async function fetchAllOrganizations(enterpriseName: string, token: string) {
 }
 
 async function fetchOrganizationMigrations(orgLogin: string, token: string) {
-  const query = `
-    query getOrgMigrations($org: String!) {
-      organization(login: $org) {
-        repositoryMigrations(first: 100) {
-          nodes {
-            id
-            databaseId
-            downloadUrl
-            excludeAttachments
-            excludeGitData
-            excludeOwnerProjects
-            excludeReleases
-            locked
-            sourceUrl
-            state
-            warningsCount
-            failureReason
-            createdAt
-            completedAt
-            repositoryName
-            migrationSource {
+  let hasNextPage = true;
+  let after: string | null = null;
+  const allMigrations: any[] = [];
+
+  while (hasNextPage) {
+    const query = `
+      query getOrgMigrations($org: String!, $after: String) {
+        organization(login: $org) {
+          repositoryMigrations(first: 100, after: $after) {
+            nodes {
               id
-              name
-              type
-              url
+              databaseId
+              excludeAttachments
+              excludeGitData
+              excludeOwnerProjects
+              excludeReleases
+              locked
+              sourceUrl
+              state
+              warningsCount
+              failureReason
+              createdAt
+              completedAt
+              repositoryName
+              migrationSource {
+                id
+                name
+                type
+                url
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
             }
           }
         }
       }
-    }
-  `;
+    `;
 
-  try {
-    const response = await axios.post(
-      GITHUB_GRAPHQL_URL,
-      {
-        query,
-        variables: { org: orgLogin }
-      },
-      {
-        headers: {
-          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-          'Content-Type': 'application/json',
+    interface QueryResponse {
+      data: {
+        organization: {
+          repositoryMigrations: {
+            nodes: Array<{
+              id: string;
+              databaseId: string;
+              excludeAttachments: boolean;
+              excludeGitData: boolean;
+              excludeOwnerProjects: boolean;
+              excludeReleases: boolean;
+              locked: boolean;
+              sourceUrl: string;
+              state: string;
+              warningsCount: number;
+              failureReason?: string;
+              createdAt: string;
+              completedAt?: string;
+              repositoryName: string;
+              migrationSource?: {
+                id: string;
+                name: string;
+                type: string;
+                url: string;
+              };
+            }>;
+            pageInfo: {
+              hasNextPage: boolean;
+              endCursor: string | null;
+            };
+          };
+        };
+      } & { errors?: Array<{ message: string }> };
+    }
+
+    try {
+      const response: QueryResponse = await axios.post(
+        GITHUB_GRAPHQL_URL,
+        {
+          query,
+          variables: { org: orgLogin, after }
+        },
+        {
+          headers: {
+            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          }
         }
+      );
+
+      if (response.data.errors) {
+        throw new Error(response.data.errors[0].message);
       }
-    );
 
-    if (response.data.errors) {
-      throw new Error(response.data.errors[0].message);
+      const { nodes, pageInfo } = response.data.organization.repositoryMigrations;
+      allMigrations.push(...nodes);
+      
+      hasNextPage = pageInfo.hasNextPage;
+      after = pageInfo.endCursor;
+      
+      console.log(`[Sync] Fetched ${nodes.length} migrations for ${orgLogin}, hasNextPage: ${hasNextPage}`);
+      
+      // Add a small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error('Error fetching migrations:', error);
+      throw error;
     }
-
-    return response.data.data.organization.repositoryMigrations.nodes;
-  } catch (error) {
-    console.error('Error fetching migrations:', error);
-    throw error;
   }
+
+  return allMigrations;
 }
 
 async function processMigration(migration: any, enterpriseName: string, orgLogin: string) {
@@ -195,7 +253,6 @@ async function processMigration(migration: any, enterpriseName: string, orgLogin
       {
         githubId: migration.id,
         databaseId: migration.databaseId,
-        downloadUrl: migration.downloadUrl,
         excludeAttachments: migration.excludeAttachments,
         excludeGitData: migration.excludeGitData,
         excludeOwnerProjects: migration.excludeOwnerProjects,
@@ -224,7 +281,7 @@ export const resolvers = {
   Query: {
     allMigrations: async (
       _: unknown,
-      { state, first = 100, after, enterpriseName, organizationName }: { 
+      { state, first = 50, after, enterpriseName, organizationName }: { 
         state?: string;
         first?: number;
         after?: string;
@@ -237,62 +294,73 @@ export const resolvers = {
         throw new Error('Authentication token is required');
       }
 
-      // First get the migrations from the database
-      let migrations = await RepositoryMigration.find()
-        .sort({ createdAt: -1 })
+      // Build the query conditions
+      const conditions: any = {};
+      if (state) conditions.state = state;
+      if (enterpriseName) conditions.enterpriseName = enterpriseName;
+      if (organizationName) conditions.organizationName = organizationName;
+
+      // Get total count for the query
+      const totalCount = await RepositoryMigration.countDocuments(conditions);
+
+      // Parse the after cursor if provided
+      let afterObjectId;
+      if (after) {
+        try {
+          afterObjectId = new mongoose.Types.ObjectId(after);
+        } catch (error) {
+          throw new Error('Invalid cursor');
+        }
+      }
+
+      // Add the _id condition for cursor-based pagination
+      if (afterObjectId) {
+        conditions._id = { $gt: afterObjectId };
+      }
+
+      // Get migrations with pagination
+      const migrations = await RepositoryMigration.find(conditions)
+        .sort({ _id: 1 })
+        .limit(first + 1) // Get one extra to determine if there are more results
         .lean();
 
-      // Filter by state if specified
-      if (state) {
-        migrations = migrations.filter(m => m.state === state);
-      }
+      // Check if there are more results
+      const hasNextPage = migrations.length > first;
+      const nodes = migrations.slice(0, first);
+      const endCursor = nodes.length > 0 ? nodes[nodes.length - 1]._id.toString() : null;
 
-      // Filter by organization if specified
-      if (organizationName) {
-        migrations = migrations.filter(m => m.organizationName === organizationName);
-      }
-
-      // Map MongoDB fields to GraphQL fields and validate required fields
-      const nodes = migrations
-        .filter(m => {
-          // Filter out any documents that are missing required fields
-          return m._id && 
-                 m.githubId && 
-                 m.state && 
-                 m.repositoryName && 
-                 m.organizationName && 
-                 m.createdAt;
-        })
-        .map(m => ({
-          id: m._id.toString(),
-          githubId: m.githubId,
-          databaseId: m.databaseId || null,
-          downloadUrl: m.downloadUrl || null,
-          excludeAttachments: m.excludeAttachments || false,
-          excludeGitData: m.excludeGitData || false,
-          excludeOwnerProjects: m.excludeOwnerProjects || false,
-          excludeReleases: m.excludeReleases || false,
-          locked: m.locked || false,
-          sourceUrl: m.sourceUrl || null,
-          state: m.state,
-          warningsCount: m.warningsCount || 0,
-          failureReason: m.failureReason || null,
-          createdAt: m.createdAt.toISOString(),
-          completedAt: m.completedAt?.toISOString() || null,
-          repositoryName: m.repositoryName,
-          enterpriseName: m.enterpriseName,
-          organizationName: m.organizationName,
-          targetOrganizationName: m.targetOrganizationName || null,
-          migrationSource: m.migrationSource || null
-        }));
+      // Map MongoDB fields to GraphQL fields
+      const mappedNodes = nodes.map(m => ({
+        id: m._id.toString(),
+        githubId: m.githubId,
+        databaseId: m.databaseId || null,
+        downloadUrl: m.downloadUrl || null,
+        excludeAttachments: m.excludeAttachments || false,
+        excludeGitData: m.excludeGitData || false,
+        excludeOwnerProjects: m.excludeOwnerProjects || false,
+        excludeReleases: m.excludeReleases || false,
+        locked: m.locked || false,
+        sourceUrl: m.sourceUrl || null,
+        state: m.state,
+        warningsCount: m.warningsCount || 0,
+        failureReason: m.failureReason || null,
+        createdAt: m.createdAt.toISOString(),
+        completedAt: m.completedAt?.toISOString() || null,
+        repositoryName: m.repositoryName,
+        enterpriseName: m.enterpriseName,
+        organizationName: m.organizationName,
+        targetOrganizationName: m.targetOrganizationName || null,
+        migrationSource: m.migrationSource || null,
+        duration: m.duration || null
+      }));
 
       return {
-        nodes,
+        nodes: mappedNodes,
         pageInfo: {
-          hasNextPage: false,
-          endCursor: null
+          hasNextPage,
+          endCursor
         },
-        totalCount: nodes.length
+        totalCount
       };
     },
 
@@ -511,13 +579,20 @@ export const resolvers = {
   },
 
   Mutation: {
-    syncMigrations: async (_: any, { enterpriseName, token }: { enterpriseName: string, token: string }) => {
+    syncMigrations: async (_: any, { enterpriseName, token, selectedOrganizations }: { enterpriseName: string, token: string, selectedOrganizations?: string[] }) => {
       try {
         console.log(`[Sync] Starting migration sync for enterprise: ${enterpriseName}`);
         
         // Fetch organizations
         console.log(`[Sync] Fetching organizations for enterprise ${enterpriseName}`);
-        const organizations = await fetchAllOrganizations(enterpriseName, token);
+        let organizations = await fetchAllOrganizations(enterpriseName, token);
+        
+        // Filter organizations if specific ones are selected
+        if (selectedOrganizations && selectedOrganizations.length > 0) {
+          organizations = organizations.filter((org: { login: string }) => selectedOrganizations.includes(org.login));
+          console.log(`[Sync] Filtered to ${organizations.length} selected organizations`);
+        }
+        
         console.log(`[Sync] Found ${organizations.length} organizations to process`);
 
         // Process each organization
@@ -594,7 +669,7 @@ export const resolvers = {
       const results = [];
 
       // Check access for each organization
-      for (const org of orgs) {
+      for (const org of orgs as Organization[]) {
         try {
           const checkQuery = `
             query checkAccess($org: String!) {
