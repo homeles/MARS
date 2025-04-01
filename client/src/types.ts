@@ -1,9 +1,11 @@
 export enum MigrationState {
-  PENDING = 'PENDING',
-  IN_PROGRESS = 'IN_PROGRESS',
   FAILED = 'FAILED',
-  SUCCEEDED = 'SUCCEEDED',
-  NOT_STARTED = 'NOT_STARTED'
+  FAILED_VALIDATION = 'FAILED_VALIDATION',
+  IN_PROGRESS = 'IN_PROGRESS',
+  NOT_STARTED = 'NOT_STARTED',
+  PENDING_VALIDATION = 'PENDING_VALIDATION',
+  QUEUED = 'QUEUED',
+  SUCCEEDED = 'SUCCEEDED'
 }
 
 export interface MigrationSource {
@@ -21,7 +23,6 @@ export interface Migration {
   state: MigrationState;
   warningsCount: number;
   failureReason?: string;
-  completedAt?: string;
   organizationName: string;
   targetOrganizationName?: string;
   duration?: number;

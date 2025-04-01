@@ -6,7 +6,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongodb_data2:/data/db
+      - mongodb_data:/data/db
     networks:
       - app-network
     logging:
@@ -54,7 +54,7 @@ services:
       dockerfile: Dockerfile
     container_name: github-migrations-client
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - NODE_ENV=development
       - VITE_GITHUB_TOKEN=${GITHUB_TOKEN}
@@ -83,4 +83,4 @@ networks:
 
 # Define volumes
 volumes:
-  mongodb_data2:
+  mongodb_data:

@@ -2,15 +2,32 @@ import gql from 'graphql-tag';
 
 export const typeDefs = gql`
   enum MigrationState {
-    PENDING
-    IN_PROGRESS
     FAILED
-    SUCCEEDED
+    FAILED_VALIDATION
+    IN_PROGRESS
     NOT_STARTED
+    PENDING_VALIDATION
+    QUEUED
+    SUCCEEDED
+  }
+
+  enum OrderDirection {
+    ASC
+    DESC
+  }
+
+  enum MigrationOrderField {
+    CREATED_AT
+  }
+
+  input MigrationOrder {
+    field: MigrationOrderField!
+    direction: OrderDirection!
   }
 
   type PageInfo {
-    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
     endCursor: String
   }
 
@@ -18,6 +35,9 @@ export const typeDefs = gql`
     nodes: [RepositoryMigration!]!
     pageInfo: PageInfo!
     totalCount: Int!
+    completedCount: Int!
+    failedCount: Int!
+    inProgressCount: Int!
   }
 
   type OrganizationConnection {
@@ -47,23 +67,16 @@ export const typeDefs = gql`
     id: ID!
     githubId: String!
     databaseId: String
-    downloadUrl: String
-    excludeAttachments: Boolean
-    excludeGitData: Boolean
-    excludeOwnerProjects: Boolean
-    excludeReleases: Boolean
-    locked: Boolean
     sourceUrl: String
     state: MigrationState!
     warningsCount: Int!
     failureReason: String
     createdAt: String!
-    completedAt: String
-    duration: Int
     repositoryName: String!
     enterpriseName: String!
     organizationName: String!
     targetOrganizationName: String
+    duration: Int
     migrationSource: MigrationSource
   }
 
@@ -80,8 +93,11 @@ export const typeDefs = gql`
     enterprise(slug: String!): Enterprise
     allMigrations(
       state: MigrationState
-      first: Int = 50
+      before: String
       after: String
+      first: Int
+      last: Int
+      orderBy: MigrationOrder
       enterpriseName: String
       organizationName: String
     ): MigrationConnection!

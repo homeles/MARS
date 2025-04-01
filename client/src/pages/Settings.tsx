@@ -15,9 +15,11 @@ const SYNC_MIGRATIONS = gql`
 const CHECK_ORG_ACCESS = gql`
   mutation CheckOrgAccess($enterpriseName: String!, $token: String!) {
     checkOrgAccess(enterpriseName: $enterpriseName, token: $token) {
+      orgId
       orgLogin
       hasAccess
       errorMessage
+      lastChecked
     }
   }
 `;
@@ -37,6 +39,7 @@ const GET_ENTERPRISE_ORGS = gql`
 const GET_ORG_ACCESS_STATUS = gql`
   query GetOrgAccessStatus($enterpriseName: String!) {
     orgAccessStatus(enterpriseName: $enterpriseName) {
+      orgId
       orgLogin
       hasAccess
       errorMessage

@@ -60,19 +60,12 @@ export const Dashboard: React.FC = () => {
   };
 
   const GET_MIGRATIONS = gql`
-    query GetMigrations(
-      $state: MigrationState, 
-      $enterpriseName: String, 
-      $organizationName: String,
-      $first: Int = 50,
-      $after: String
-    ) {
+    query GetMigrations($state: MigrationState, $before: String, $orderBy: MigrationOrder) {
       allMigrations(
-        state: $state
-        enterpriseName: $enterpriseName
-        organizationName: $organizationName
-        first: $first
-        after: $after
+        state: $state,
+        before: $before,
+        last: 100,
+        orderBy: $orderBy
       ) {
         nodes {
           id
@@ -82,30 +75,27 @@ export const Dashboard: React.FC = () => {
           state
           warningsCount
           failureReason
-          completedAt
           organizationName
-          targetOrganizationName
-          duration
           enterpriseName
+          migrationSource {
+            id
+            name
+            type
+            url
+          }
         }
         pageInfo {
-          hasNextPage
+          hasPreviousPage
+          startCursor
           endCursor
         }
         totalCount
+        completedCount
+        failedCount
+        inProgressCount
       }
     }
   `;
-
-  const calculateStats = (migrations: Migration[]) => {
-    const total = migrations.length;
-    const completed = migrations.filter(m => m.state === 'SUCCEEDED').length;
-    const failed = migrations.filter(m => m.state === 'FAILED').length;
-    const inProgress = migrations.filter(m => m.state === 'IN_PROGRESS').length;
-    const succeeded = completed; // Add succeeded for consistency
-
-    return { total, completed, failed, inProgress, succeeded };
-  };
 
   const { data, loading, error, fetchMore } = useQuery(GET_MIGRATIONS, {
     variables: { 
@@ -118,7 +108,13 @@ export const Dashboard: React.FC = () => {
   const migrations: Migration[] = data?.allMigrations?.nodes || [];
   const pageInfo = data?.allMigrations?.pageInfo;
   const totalCount = data?.allMigrations?.totalCount || 0;
-  
+  const stats = {
+    total: data?.allMigrations?.totalCount || 0,
+    succeeded: data?.allMigrations?.completedCount || 0,
+    failed: data?.allMigrations?.failedCount || 0,
+    inProgress: data?.allMigrations?.inProgressCount || 0
+  };
+
   const filteredMigrations = migrations.filter(migration =>
     migration.repositoryName.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -212,7 +208,13 @@ export const Dashboard: React.FC = () => {
           )}
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-          {new Date(migration.createdAt).toLocaleDateString()}
+          {migration.createdAt ? new Date(migration.createdAt).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }) : '-'}
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
           {migration.warningsCount || 0}
@@ -226,8 +228,6 @@ export const Dashboard: React.FC = () => {
       </tr>
     );
   };
-
-  const stats = calculateStats(migrations);
 
   // Prepare chart data
   const chartData = {
