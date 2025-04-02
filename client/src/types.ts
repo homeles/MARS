@@ -18,15 +18,17 @@ export interface MigrationSource {
 export interface Migration {
   id: string;
   githubId: string;
+  databaseId?: string;
   repositoryName: string;
-  createdAt: string;
+  sourceUrl?: string;
   state: MigrationState;
   warningsCount: number;
   failureReason?: string;
+  createdAt: string;
   organizationName: string;
   targetOrganizationName?: string;
   duration?: number;
   enterpriseName: string;
-  sourceUrl?: string;
+  migrationLogUrl?: string;
   migrationSource?: MigrationSource;
 }

@@ -20,9 +20,12 @@ interface AllMigrationsArgs {
   after?: string;
   first?: number;
   last?: number;
+  pageSize?: number;
+  page?: number;
   orderBy?: MigrationOrder;
   enterpriseName?: string;
   organizationName?: string;
+  search?: string;
 }
 
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
@@ -289,90 +292,115 @@ export const resolvers = {
   Query: {
     allMigrations: async (_: unknown, { 
       state, 
-      before, 
-      after, 
-      first, 
-      last, 
+      pageSize = 10,
+      page = 1,
       orderBy,
       enterpriseName,
-      organizationName 
+      organizationName,
+      search 
     }: AllMigrationsArgs) => {
-      let query = {};
-      
-      if (state) {
-        query = { ...query, state };
-      }
-      if (enterpriseName) {
-        query = { ...query, enterpriseName };
-      }
-      if (organizationName) {
-        query = { ...query, organizationName };
-      }
+      try {
+        console.log('[Query] allMigrations called with params:', {
+          state,
+          pageSize,
+          page,
+          orderBy,
+          enterpriseName,
+          organizationName,
+          search
+        });
+        
+        // Base query conditions
+        let query: any = {};
+        
+        if (state) {
+          query.state = state;
+        }
+        if (enterpriseName) {
+          query.enterpriseName = enterpriseName;
+        }
+        if (organizationName) {
+          query.organizationName = organizationName;
+        }
+        
+        // Add text search if search parameter is provided
+        if (search) {
+          query.$or = [
+            { repositoryName: { $regex: search, $options: 'i' } },
+            { organizationName: { $regex: search, $options: 'i' } },
+            { state: { $regex: search, $options: 'i' } },
+            { failureReason: { $regex: search, $options: 'i' } }
+          ];
+        }
 
-      const sortDirection = orderBy?.direction === 'DESC' ? -1 : 1;
-      const sortField = orderBy?.field?.toLowerCase() || 'createdAt';
-      
-      // First get the total count and stats for all matching migrations
-      const [totalCount, allMigrations] = await Promise.all([
-        RepositoryMigration.countDocuments(query),
-        RepositoryMigration.find(query).exec()
-      ]);
-      
-      // Calculate metrics from all matching migrations
-      const metrics = {
-        totalCount,
-        completedCount: allMigrations.filter(m => m.state === 'SUCCEEDED').length,
-        failedCount: allMigrations.filter(m => m.state === 'FAILED').length,
-        inProgressCount: allMigrations.filter(m => m.state === 'IN_PROGRESS').length
-      };
+        // Sort configuration
+        const sortDirection = orderBy?.direction === 'DESC' ? -1 : 1;
+        const sortField = orderBy?.field?.toLowerCase() || 'createdAt';
+        
+        // Get total count for pagination info
+        const totalCount = await RepositoryMigration.countDocuments(query);
+        
+        // Calculate pagination
+        const limit = Math.max(1, Math.min(100, pageSize)); // Ensure pageSize is between 1 and 100
+        const totalPages = Math.ceil(totalCount / limit);
+        const currentPage = Math.max(1, Math.min(page, totalPages)); // Ensure page is valid
+        const skip = (currentPage - 1) * limit;
 
-      let migrationQuery = RepositoryMigration.find(query);
+        console.log('[Query] Executing MongoDB query:', {
+          query,
+          sort: { [sortField]: sortDirection },
+          skip,
+          limit,
+          currentPage,
+          totalPages
+        });
 
-      // Handle cursors for pagination
-      if (before) {
-        migrationQuery = migrationQuery.where('createdAt').lt(new Date(before).valueOf());
-      }
-      if (after) {
-        migrationQuery = migrationQuery.where('createdAt').gt(new Date(after).valueOf());
-      }
+        // Execute query with pagination
+        const migrations = await RepositoryMigration.find(query)
+          .sort({ [sortField]: sortDirection })
+          .skip(skip)
+          .limit(limit)
+          .exec();
 
-      // Apply sorting
-      migrationQuery = migrationQuery.sort({ [sortField]: sortDirection });
+        // Calculate pagination metadata
+        const hasNextPage = currentPage < totalPages;
+        const hasPreviousPage = currentPage > 1;
 
-      // Apply limit for pagination
-      if (first) {
-        migrationQuery = migrationQuery.limit(first);
-      }
-      if (last) {
-        migrationQuery = migrationQuery.limit(last);
-      }
+        // Get metrics for all states
+        const metrics = {
+          totalCount,
+          completedCount: await RepositoryMigration.countDocuments({ ...query, state: 'SUCCEEDED' }),
+          failedCount: await RepositoryMigration.countDocuments({ ...query, state: { $in: ['FAILED', 'FAILED_VALIDATION'] } }),
+          inProgressCount: await RepositoryMigration.countDocuments({ ...query, state: 'IN_PROGRESS' })
+        };
 
-      // Get paginated migrations
-      const paginatedMigrations = await migrationQuery.exec();
-
-      // Get page info
-      const startCursor = paginatedMigrations.length > 0 ? paginatedMigrations[0].createdAt.toISOString() : null;
-      const endCursor = paginatedMigrations.length > 0 ? paginatedMigrations[paginatedMigrations.length - 1].createdAt.toISOString() : null;
-      
-      // Check if there are more pages
-      const hasPreviousPage = before ? await RepositoryMigration.exists({
-        ...query,
-        createdAt: { $gt: new Date(before) }
-      }) : false;
-
-      return {
-        nodes: paginatedMigrations.map(migration => ({
-          ...migration.toObject(),
-          id: migration._id.toString(), // Explicitly map _id to id
-          createdAt: migration.createdAt instanceof Date ? migration.createdAt.toISOString() : null
-        })),
-        pageInfo: {
+        console.log('[Query] Response metrics:', { 
+          resultCount: migrations.length,
+          currentPage,
+          totalPages,
+          hasNextPage,
           hasPreviousPage,
-          startCursor,
-          endCursor
-        },
-        ...metrics
-      };
+          ...metrics
+        });
+
+        return {
+          nodes: migrations.map(migration => ({
+            ...migration.toObject(),
+            id: migration._id.toString(),
+            createdAt: migration.createdAt instanceof Date ? migration.createdAt.toISOString() : null
+          })),
+          pageInfo: {
+            hasPreviousPage,
+            hasNextPage,
+            totalPages,
+            currentPage
+          },
+          ...metrics
+        };
+      } catch (error) {
+        console.error('[ERROR] Error in allMigrations resolver:', error);
+        throw error;
+      }
     },
 
     migration: async (_: unknown, { id }: { id: string }, { token }: ResolverContext) => {

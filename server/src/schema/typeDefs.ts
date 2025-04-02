@@ -26,9 +26,10 @@ export const typeDefs = gql`
   }
 
   type PageInfo {
+    hasNextPage: Boolean!
     hasPreviousPage: Boolean!
-    startCursor: String
-    endCursor: String
+    totalPages: Int!
+    currentPage: Int!
   }
 
   type MigrationConnection {
@@ -78,6 +79,7 @@ export const typeDefs = gql`
     targetOrganizationName: String
     duration: Int
     migrationSource: MigrationSource
+    migrationLogUrl: String
   }
 
   type OrgAccessStatus {
@@ -97,9 +99,12 @@ export const typeDefs = gql`
       after: String
       first: Int
       last: Int
+      page: Int
+      pageSize: Int
       orderBy: MigrationOrder
       enterpriseName: String
       organizationName: String
+      search: String
     ): MigrationConnection!
     migration(id: ID!): RepositoryMigration
     enterpriseStats(enterpriseName: String!): EnterpriseStats!

@@ -29,11 +29,26 @@ const authLink = setContext((_, { headers }) => {
 // Create Apollo Client with retries
 const client = new ApolloClient({
   link: authLink.concat(httpLink),
-  cache: new InMemoryCache(),
+  cache: new InMemoryCache({
+    typePolicies: {
+      Query: {
+        fields: {
+          allMigrations: {
+            // Don't merge results, treat each page as separate
+            keyArgs: ['state', 'enterpriseName', 'organizationName', 'search', 'orderBy'],
+            merge: false
+          }
+        }
+      }
+    }
+  }),
   defaultOptions: {
-    query: {
-      fetchPolicy: 'network-only', // Don't cache query results
+    watchQuery: {
+      fetchPolicy: 'network-only'
     },
+    query: {
+      fetchPolicy: 'network-only'
+    }
   }
 });
 

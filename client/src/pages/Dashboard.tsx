@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
 import { Line } from 'react-chartjs-2';
@@ -16,6 +16,7 @@ import StatsCard from '../components/StatsCard';
 import MigrationStatusBadge from '../components/MigrationStatusBadge';
 import { MigrationState, Migration } from '../types';
 import { logger } from '../utils/logger';
+import debounce from 'lodash.debounce';
 
 // Register ChartJS components
 ChartJS.register(
@@ -41,11 +42,63 @@ const GET_ORGANIZATIONS = gql`
   }
 `;
 
+const GET_MIGRATIONS = gql`
+  query GetMigrations($state: MigrationState, $pageSize: Int, $page: Int, $orderBy: MigrationOrder, $search: String) {
+    allMigrations(
+      state: $state,
+      pageSize: $pageSize,
+      page: $page,
+      orderBy: $orderBy,
+      search: $search
+    ) {
+      nodes {
+        id
+        githubId
+        repositoryName
+        createdAt
+        state
+        warningsCount
+        failureReason
+        organizationName
+        enterpriseName
+        migrationSource {
+          id
+          name
+          type
+          url
+        }
+      }
+      pageInfo {
+        hasPreviousPage
+        hasNextPage
+        totalPages
+        currentPage
+      }
+      totalCount
+      completedCount
+      failedCount
+      inProgressCount
+    }
+  }
+`;
+
 export const Dashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>('');
   const [selectedOrg, setSelectedOrg] = useState('');
   const [loadingMore, setLoadingMore] = useState(false);
+  const [pageSize, setPageSize] = useState<number>(30);
+  const [currentPage, setCurrentPage] = useState(1);
+  // Add debounced search query
+  const [debouncedSearch] = useState(() => 
+    debounce((query: string) => {
+      setCurrentPage(1); // Reset to first page when searching
+      refetch({
+        search: query || undefined,
+        page: 1
+      });
+    }, 300)
+  );
 
   // Fetch organizations for the dropdown
   const { data: organizationsData } = useQuery(GET_ORGANIZATIONS, {
@@ -57,57 +110,41 @@ export const Dashboard: React.FC = () => {
     setSearchQuery('');
     setSelectedStatus('');
     setSelectedOrg('');
+    refetch({
+      search: undefined,
+      state: undefined,
+      organizationName: undefined
+    });
   };
 
-  const GET_MIGRATIONS = gql`
-    query GetMigrations($state: MigrationState, $before: String, $orderBy: MigrationOrder) {
-      allMigrations(
-        state: $state,
-        before: $before,
-        last: 100,
-        orderBy: $orderBy
-      ) {
-        nodes {
-          id
-          githubId
-          repositoryName
-          createdAt
-          state
-          warningsCount
-          failureReason
-          organizationName
-          enterpriseName
-          migrationSource {
-            id
-            name
-            type
-            url
-          }
-        }
-        pageInfo {
-          hasPreviousPage
-          startCursor
-          endCursor
-        }
-        totalCount
-        completedCount
-        failedCount
-        inProgressCount
-      }
-    }
-  `;
-
-  const { data, loading, error, fetchMore } = useQuery(GET_MIGRATIONS, {
+  const { data, loading, error, refetch } = useQuery(GET_MIGRATIONS, {
     variables: { 
       state: selectedStatus || undefined,
       organizationName: selectedOrg || undefined,
-      first: 50
-    }
+      pageSize,
+      page: currentPage,
+      orderBy: {
+        field: 'CREATED_AT',
+        direction: 'DESC'
+      },
+      search: searchQuery || undefined
+    },
+    fetchPolicy: 'cache-and-network', // Change this to fetch from network and update cache
+    nextFetchPolicy: 'cache-first' // Use cache for subsequent requests until variables change
   });
 
-  const migrations: Migration[] = data?.allMigrations?.nodes || [];
+  // Handle search input changes
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    debouncedSearch(value);
+  };
+
+  const migrations = data?.allMigrations?.nodes || [];
   const pageInfo = data?.allMigrations?.pageInfo;
   const totalCount = data?.allMigrations?.totalCount || 0;
+  const totalPages = pageInfo?.totalPages || Math.ceil(totalCount / pageSize);
+  
   const stats = {
     total: data?.allMigrations?.totalCount || 0,
     succeeded: data?.allMigrations?.completedCount || 0,
@@ -115,42 +152,17 @@ export const Dashboard: React.FC = () => {
     inProgress: data?.allMigrations?.inProgressCount || 0
   };
 
-  const filteredMigrations = migrations.filter(migration =>
-    migration.repositoryName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const loadMoreMigrations = async () => {
-    if (!pageInfo?.hasNextPage) return;
-    
-    setLoadingMore(true);
-    try {
-      await fetchMore({
-        variables: {
-          after: pageInfo.endCursor,
-          state: selectedStatus || undefined,
-          organizationName: selectedOrg || undefined,
-          first: 50
-        },
-        updateQuery: (prev, { fetchMoreResult }) => {
-          if (!fetchMoreResult) return prev;
-          return {
-            allMigrations: {
-              ...fetchMoreResult.allMigrations,
-              nodes: [
-                ...prev.allMigrations.nodes,
-                ...fetchMoreResult.allMigrations.nodes
-              ]
-            }
-          };
-        }
-      });
-    } catch (error) {
-      logger.error('Failed to load more migrations', {
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    } finally {
-      setLoadingMore(false);
-    }
+  // Prepare chart data
+  const chartData = {
+    labels: ['7 days ago', '6 days ago', '5 days ago', '4 days ago', '3 days ago', '2 days ago', 'Today'],
+    datasets: [
+      {
+        label: 'Completed Migrations',
+        data: [12, 19, 15, 25, 22, 30, stats.succeeded],
+        borderColor: 'rgb(75, 192, 192)',
+        tension: 0.1,
+      },
+    ],
   };
 
   const renderRow = (migration: Migration) => {
@@ -191,7 +203,7 @@ export const Dashboard: React.FC = () => {
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
+                xmlns="http://www.w3.org/200/svg"
               >
                 <path
                   strokeLinecap="round"
@@ -229,17 +241,88 @@ export const Dashboard: React.FC = () => {
     );
   };
 
-  // Prepare chart data
-  const chartData = {
-    labels: ['7 days ago', '6 days ago', '5 days ago', '4 days ago', '3 days ago', '2 days ago', 'Today'],
-    datasets: [
-      {
-        label: 'Completed Migrations',
-        data: [12, 19, 15, 25, 22, 30, stats.succeeded], // Example data
-        borderColor: 'rgb(75, 192, 192)',
-        tension: 0.1,
-      },
-    ],
+  // Clear pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStatus, selectedOrg, pageSize]);
+
+  const PaginationButton: React.FC<{
+    onClick: () => void;
+    disabled?: boolean;
+    active?: boolean;
+    children: React.ReactNode;
+  }> = ({ onClick, disabled, active, children }) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`px-3 py-2 text-sm rounded-md ${
+        disabled
+          ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+          : active
+          ? 'bg-primary-600 text-white'
+          : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+      } border border-gray-300 dark:border-gray-600`}
+    >
+      {children}
+    </button>
+  );
+
+  const generatePageNumbers = (currentPage: number, totalPages: number) => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+    let l;
+
+    range.push(1);
+
+    for (let i = currentPage - delta; i <= currentPage + delta; i++) {
+      if (i < totalPages && i > 1) {
+        range.push(i);
+      }
+    }
+
+    range.push(totalPages);
+
+    for (let i of range) {
+      if (l) {
+        if (i - l === 2) {
+          rangeWithDots.push(l + 1);
+        } else if (i - l !== 1) {
+          rangeWithDots.push('...');
+        }
+      }
+      rangeWithDots.push(i);
+      l = i;
+    }
+
+    return rangeWithDots;
+  };
+
+  const goToPage = async (page: number) => {
+    if (page < 1 || page > totalPages || page === currentPage || loadingMore) return;
+    
+    setLoadingMore(true);
+    try {
+      setCurrentPage(page);
+      
+      await refetch({
+        page,
+        pageSize,
+        state: selectedStatus || undefined,
+        organizationName: selectedOrg || undefined,
+        orderBy: {
+          field: 'CREATED_AT',
+          direction: 'DESC'
+        },
+        search: searchQuery || undefined
+      });
+    } catch (error) {
+      logger.error('Error navigating to page', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   return (
@@ -304,7 +387,7 @@ export const Dashboard: React.FC = () => {
             type="text"
             placeholder="Search repositories..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
             className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500"
           />
         </div>
@@ -328,6 +411,16 @@ export const Dashboard: React.FC = () => {
             <option key={org} value={org}>{org}</option>
           ))}
         </select>
+        <select
+          value={pageSize}
+          onChange={(e) => setPageSize(Number(e.target.value))}
+          className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+        >
+          <option value={10}>10 per page</option>
+          <option value={30}>30 per page</option>
+          <option value={50}>50 per page</option>
+          <option value={100}>100 per page</option>
+        </select>
         {(searchQuery || selectedStatus || selectedOrg) && (
           <button
             onClick={clearAllFilters}
@@ -339,7 +432,7 @@ export const Dashboard: React.FC = () => {
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
+              xmlns="http://www.w3.org/200/svg"
             >
               <path
                 strokeLinecap="round"
@@ -398,7 +491,7 @@ export const Dashboard: React.FC = () => {
                     Error loading migrations
                   </td>
                 </tr>
-              ) : filteredMigrations.length === 0 ? (
+              ) : migrations.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                     No migrations found
@@ -406,7 +499,7 @@ export const Dashboard: React.FC = () => {
                 </tr>
               ) : (
                 <>
-                  {filteredMigrations.map((m: Migration) => renderRow(m))}
+                  {migrations.map((m: Migration) => renderRow(m))}
                   {loadingMore && (
                     <tr>
                       <td colSpan={8} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
@@ -419,25 +512,58 @@ export const Dashboard: React.FC = () => {
             </tbody>
           </table>
         </div>
-        
-        {pageInfo?.hasNextPage && (
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-            <button
-              onClick={loadMoreMigrations}
-              disabled={loadingMore}
-              className={`w-full px-4 py-2 text-sm rounded-md text-white ${
-                !loadingMore
-                  ? 'bg-primary-600 hover:bg-primary-700'
-                  : 'bg-gray-400 cursor-not-allowed'
-              }`}
-            >
-              {loadingMore ? 'Loading...' : 'Load More Migrations'}
-            </button>
-            <p className="mt-2 text-sm text-center text-gray-500 dark:text-gray-400">
-              Showing {migrations.length} of {totalCount} migrations
-            </p>
+
+        {/* Pagination Controls */}
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex flex-col items-center justify-center space-y-3">
+            <div className="flex items-center space-x-2">
+              <PaginationButton
+                onClick={() => goToPage(1)}
+                disabled={currentPage === 1 || loadingMore}
+              >
+                ««
+              </PaginationButton>
+              <PaginationButton
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1 || loadingMore}
+              >
+                «
+              </PaginationButton>
+              
+              {generatePageNumbers(currentPage, totalPages).map((pageNum, idx) => (
+                <React.Fragment key={idx}>
+                  {pageNum === '...' ? (
+                    <span className="px-3 py-2 text-gray-500 dark:text-gray-400">...</span>
+                  ) : (
+                    <PaginationButton
+                      onClick={() => goToPage(Number(pageNum))}
+                      active={currentPage === pageNum}
+                      disabled={loadingMore}
+                    >
+                      {pageNum}
+                    </PaginationButton>
+                  )}
+                </React.Fragment>
+              ))}
+              
+              <PaginationButton
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages || loadingMore || !pageInfo?.hasNextPage}
+              >
+                »
+              </PaginationButton>
+              <PaginationButton
+                onClick={() => goToPage(totalPages)}
+                disabled={currentPage === totalPages || loadingMore || !pageInfo?.hasNextPage}
+              >
+                »»
+              </PaginationButton>
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              Showing {migrations.length} of {totalCount} migrations (Page {currentPage} of {totalPages})
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

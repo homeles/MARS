@@ -10,15 +10,18 @@ const GET_MIGRATION = gql`
     migration(id: $id) {
       id
       githubId
+      databaseId
       repositoryName
-      createdAt
+      sourceUrl
       state
       warningsCount
       failureReason
+      createdAt
       organizationName
       enterpriseName
+      targetOrganizationName
       duration
-      sourceUrl
+      migrationLogUrl
       migrationSource {
         id
         name
@@ -106,9 +109,19 @@ const MigrationDetails: React.FC = () => {
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
                 {migration.repositoryName}
               </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                Organization: {migration.organizationName}
-              </p>
+              <div className="space-y-1">
+                <p className="text-gray-600 dark:text-gray-300">
+                  Organization: {migration.organizationName}
+                </p>
+                <p className="text-gray-600 dark:text-gray-300">
+                  Enterprise: {migration.enterpriseName}
+                </p>
+                {migration.targetOrganizationName && (
+                  <p className="text-gray-600 dark:text-gray-300">
+                    Target Organization: {migration.targetOrganizationName}
+                  </p>
+                )}
+              </div>
             </div>
             <div className="mt-4 md:mt-0">
               <MigrationStatusBadge status={migration.state} />
@@ -117,71 +130,113 @@ const MigrationDetails: React.FC = () => {
 
           {/* Migration Details Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Left Column - Core Details */}
             <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Created</h3>
-                <p className="mt-1 text-gray-900 dark:text-white">{formattedDate}</p>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Duration</h3>
-                <p className="mt-1 text-gray-900 dark:text-white">
-                  {migration.duration ? `${Math.round(migration.duration / 1000 / 60)} minutes` : 'N/A'}
-                </p>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings</h3>
-                <p className="mt-1 text-gray-900 dark:text-white">{migration.warningsCount || 0}</p>
+              <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4">Core Information</h3>
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">GitHub ID</h4>
+                    <p className="mt-1 text-sm text-gray-900 dark:text-white font-mono">{migration.githubId}</p>
+                  </div>
+                  {migration.databaseId && (
+                    <div>
+                      <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Database ID</h4>
+                      <p className="mt-1 text-sm text-gray-900 dark:text-white font-mono">{migration.databaseId}</p>
+                    </div>
+                  )}
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Created At</h4>
+                    <p className="mt-1 text-sm text-gray-900 dark:text-white">{formattedDate}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Duration</h4>
+                    <p className="mt-1 text-sm text-gray-900 dark:text-white">
+                      {migration.duration ? `${Math.round(migration.duration / 1000 / 60)} minutes` : 'Not completed'}
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Warnings</h4>
+                    <p className="mt-1 text-sm text-gray-900 dark:text-white">
+                      {migration.warningsCount || 0} {migration.warningsCount === 1 ? 'warning' : 'warnings'}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
+            {/* Right Column - URLs and Source Info */}
             <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Migration Source</h3>
-                <p className="mt-1 text-gray-900 dark:text-white">
-                  {migration.migrationSource ? (
+              <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4">Repository Information</h3>
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Repository URL</h4>
                     <a
-                      href={migration.migrationSource.url}
+                      href={repoUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+                      className="mt-1 text-sm text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 block break-all"
                     >
-                      {migration.migrationSource.name} ({migration.migrationSource.type})
+                      {repoUrl}
                     </a>
-                  ) : (
-                    'N/A'
+                  </div>
+
+                  {migration.sourceUrl && (
+                    <div>
+                      <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Source URL</h4>
+                      <a
+                        href={migration.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 text-sm text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 block break-all"
+                      >
+                        {migration.sourceUrl}
+                      </a>
+                    </div>
                   )}
-                </p>
+
+                  {migration.migrationLogUrl && (
+                    <div>
+                      <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Migration Log URL</h4>
+                      <a
+                        href={migration.migrationLogUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 text-sm text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 block break-all"
+                      >
+                        View Migration Logs
+                      </a>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Repository URL</h3>
-                <p className="mt-1">
-                  <a
-                    href={repoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
-                  >
-                    {repoUrl}
-                  </a>
-                </p>
-              </div>
-
-              {migration.sourceUrl && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Source URL</h3>
-                  <p className="mt-1">
-                    <a
-                      href={migration.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
-                    >
-                      {migration.sourceUrl}
-                    </a>
-                  </p>
+              {/* Migration Source Details */}
+              {migration.migrationSource && (
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                  <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4">Migration Source</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Source Name</h4>
+                      <p className="mt-1 text-sm text-gray-900 dark:text-white">{migration.migrationSource.name}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Source Type</h4>
+                      <p className="mt-1 text-sm text-gray-900 dark:text-white">{migration.migrationSource.type}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Source URL</h4>
+                      <a
+                        href={migration.migrationSource.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 text-sm text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 block break-all"
+                      >
+                        {migration.migrationSource.url}
+                      </a>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -191,7 +246,7 @@ const MigrationDetails: React.FC = () => {
           {migration.failureReason && (
             <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/30 rounded-lg">
               <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Failure Reason</h3>
-              <p className="mt-1 text-red-600 dark:text-red-300">{migration.failureReason}</p>
+              <p className="mt-1 text-sm text-red-600 dark:text-red-300">{migration.failureReason}</p>
             </div>
           )}
         </div>
