@@ -18,6 +18,11 @@ export const typeDefs = gql`
 
   enum MigrationOrderField {
     CREATED_AT
+    REPOSITORY_NAME
+    ORGANIZATION_NAME
+    STATE
+    WARNINGS_COUNT
+    DURATION
   }
 
   input MigrationOrder {

@@ -265,25 +265,48 @@ async function fetchOrganizationMigrations(orgLogin: string, token: string) {
 
 async function processMigration(migration: any, enterpriseName: string, orgLogin: string) {
   try {
-    await RepositoryMigration.findOneAndUpdate(
-      { githubId: migration.id },
-      {
+    const createdAtDate = new Date(migration.createdAt);
+    if (isNaN(createdAtDate.getTime())) {
+      console.error('Invalid createdAt date:', {
+        migrationId: migration.id,
+        createdAt: migration.createdAt
+      });
+      throw new Error(`Invalid createdAt date: ${migration.createdAt}`);
+    }
+
+    // Find existing migration
+    const existingMigration = await RepositoryMigration.findOne({ githubId: migration.id });
+    if (existingMigration) {
+      // If it exists, only update if the state has changed
+      if (existingMigration.state !== migration.state) {
+        existingMigration.state = migration.state;
+        existingMigration.warningsCount = migration.warningsCount;
+        existingMigration.failureReason = migration.failureReason;
+        existingMigration.migrationSource = migration.migrationSource;
+        await existingMigration.save();
+      }
+    } else {
+      // Create new migration with original GitHub timestamp
+      await RepositoryMigration.create({
         githubId: migration.id,
         databaseId: migration.databaseId,
         sourceUrl: migration.sourceUrl,
         state: migration.state,
         warningsCount: migration.warningsCount,
         failureReason: migration.failureReason,
-        createdAt: new Date(migration.createdAt),
+        createdAt: createdAtDate,
         repositoryName: migration.repositoryName,
         enterpriseName: enterpriseName,
         organizationName: orgLogin,
         migrationSource: migration.migrationSource
-      },
-      { upsert: true, new: true }
-    );
+      });
+    }
   } catch (error) {
-    console.error('Error processing migration:', error);
+    console.error('Error processing migration:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      migrationId: migration.id,
+      createdAt: migration.createdAt
+    });
     throw error;
   }
 }
@@ -300,16 +323,6 @@ export const resolvers = {
       search 
     }: AllMigrationsArgs) => {
       try {
-        console.log('[Query] allMigrations called with params:', {
-          state,
-          pageSize,
-          page,
-          orderBy,
-          enterpriseName,
-          organizationName,
-          search
-        });
-        
         // Base query conditions
         let query: any = {};
         
@@ -335,7 +348,29 @@ export const resolvers = {
 
         // Sort configuration
         const sortDirection = orderBy?.direction === 'DESC' ? -1 : 1;
-        const sortField = orderBy?.field?.toLowerCase() || 'createdAt';
+        let sortField = 'createdAt';
+        
+        // Map GraphQL enum fields to MongoDB field names
+        switch (orderBy?.field?.toLowerCase()) {
+          case 'repository_name':
+            sortField = 'repositoryName';
+            break;
+          case 'organization_name':
+            sortField = 'organizationName';
+            break;
+          case 'state':
+            sortField = 'state';
+            break;
+          case 'warnings_count':
+            sortField = 'warningsCount';
+            break;
+          case 'duration':
+            sortField = 'duration';
+            break;
+          case 'created_at':
+          default:
+            sortField = 'createdAt';
+        }
         
         // Get total count for pagination info
         const totalCount = await RepositoryMigration.countDocuments(query);
@@ -346,17 +381,9 @@ export const resolvers = {
         const currentPage = Math.max(1, Math.min(page, totalPages)); // Ensure page is valid
         const skip = (currentPage - 1) * limit;
 
-        console.log('[Query] Executing MongoDB query:', {
-          query,
-          sort: { [sortField]: sortDirection },
-          skip,
-          limit,
-          currentPage,
-          totalPages
-        });
-
-        // Execute query with pagination
+        // Execute query with pagination and case-insensitive sorting
         const migrations = await RepositoryMigration.find(query)
+          .collation({ locale: 'en', strength: 2 }) // strength: 2 means case-insensitive
           .sort({ [sortField]: sortDirection })
           .skip(skip)
           .limit(limit)
@@ -373,15 +400,6 @@ export const resolvers = {
           failedCount: await RepositoryMigration.countDocuments({ ...query, state: { $in: ['FAILED', 'FAILED_VALIDATION'] } }),
           inProgressCount: await RepositoryMigration.countDocuments({ ...query, state: 'IN_PROGRESS' })
         };
-
-        console.log('[Query] Response metrics:', { 
-          resultCount: migrations.length,
-          currentPage,
-          totalPages,
-          hasNextPage,
-          hasPreviousPage,
-          ...metrics
-        });
 
         return {
           nodes: migrations.map(migration => ({

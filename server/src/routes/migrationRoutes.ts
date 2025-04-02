@@ -14,7 +14,9 @@ interface SyncBody {
 // Get all migrations from local database
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const migrations = await RepositoryMigration.find().sort({ createdAt: -1 });
+    const migrations = await RepositoryMigration.find()
+      .collation({ locale: 'en', strength: 2 }) // strength: 2 means case-insensitive
+      .sort({ createdAt: -1 });
     res.json(migrations);
   } catch (error) {
     console.error('Error fetching migrations:', error);
@@ -157,7 +159,6 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
             }
           }
         );
-
         if (response.data.errors) {
           throw new Error(response.data.errors[0].message);
         }
@@ -201,22 +202,42 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
 
     // Save migrations to database
     for (const migration of filteredMigrations) {
-      await RepositoryMigration.findOneAndUpdate(
-        { githubId: migration.id },
-        {
+      const createdAtDate = new Date(migration.createdAt);
+      if (isNaN(createdAtDate.getTime())) {
+        console.error('Invalid createdAt date:', {
+          migrationId: migration.id,
+          createdAt: migration.createdAt
+        });
+        continue;
+      }
+
+      // Find existing migration
+      const existingMigration = await RepositoryMigration.findOne({ githubId: migration.id });
+      if (existingMigration) {
+        // If it exists, only update if the state has changed
+        if (existingMigration.state !== migration.state) {
+          existingMigration.state = migration.state;
+          existingMigration.warningsCount = migration.warningsCount;
+          existingMigration.failureReason = migration.failureReason;
+          existingMigration.migrationSource = migration.migrationSource;
+          await existingMigration.save();
+        }
+      } else {
+        // Create new migration with original GitHub timestamp
+        await RepositoryMigration.create({
           githubId: migration.id,
           databaseId: migration.databaseId,
           sourceUrl: migration.sourceUrl,
           state: migration.state,
           warningsCount: migration.warningsCount,
           failureReason: migration.failureReason,
-          createdAt: new Date(migration.createdAt),
+          createdAt: createdAtDate,
           repositoryName: migration.repositoryName,
           enterpriseName: enterpriseName,
-          migrationSource: migration.migrationSource
-        },
-        { upsert: true, new: true }
-      );
+          migrationSource: migration.migrationSource,
+          organizationName: migration.organizationName
+        });
+      }
     }
 
     res.json({

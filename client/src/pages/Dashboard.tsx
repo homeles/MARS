@@ -117,6 +117,22 @@ export const Dashboard: React.FC = () => {
     });
   };
 
+  // Add sort state management
+  const [sortField, setSortField] = useState<'CREATED_AT' | 'REPOSITORY_NAME' | 'ORGANIZATION_NAME' | 'STATE' | 'WARNINGS_COUNT' | 'DURATION'>('CREATED_AT');
+  const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('DESC');
+
+  const handleSort = (field: typeof sortField) => {
+    if (field === sortField) {
+      // If clicking the same field, toggle direction
+      setSortDirection(sortDirection === 'ASC' ? 'DESC' : 'ASC');
+    } else {
+      // If clicking a new field, set it with DESC direction
+      setSortField(field);
+      setSortDirection('DESC');
+    }
+  };
+
+  // Update useQuery variables to include current sort
   const { data, loading, error, refetch } = useQuery(GET_MIGRATIONS, {
     variables: { 
       state: selectedStatus || undefined,
@@ -124,8 +140,8 @@ export const Dashboard: React.FC = () => {
       pageSize,
       page: currentPage,
       orderBy: {
-        field: 'CREATED_AT',
-        direction: 'DESC'
+        field: sortField,
+        direction: sortDirection
       },
       search: searchQuery || undefined
     },
@@ -325,6 +341,31 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const SortableHeader: React.FC<{ 
+    field: typeof sortField;
+    title: string;
+    className?: string;
+  }> = ({ field, title, className = '' }) => {
+    const isCurrentSort = sortField === field;
+    const sortIcon = isCurrentSort ? (
+      sortDirection === 'ASC' ? '↑' : '↓'
+    ) : '↕';
+
+    return (
+      <th 
+        className={`${className} cursor-pointer group`}
+        onClick={() => handleSort(field)}
+      >
+        <div className="flex items-center space-x-1">
+          <span>{title}</span>
+          <span className={`${isCurrentSort ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
+            {sortIcon}
+          </span>
+        </div>
+      </th>
+    );
+  };
+
   return (
     <div className="container mx-auto px-4 py-6">
       {/* Stats Cards */}
@@ -452,27 +493,39 @@ export const Dashboard: React.FC = () => {
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Repository
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Organization
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Status
-                </th>
+                <SortableHeader
+                  field="REPOSITORY_NAME"
+                  title="Repository"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                />
+                <SortableHeader
+                  field="ORGANIZATION_NAME"
+                  title="Organization"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                />
+                <SortableHeader
+                  field="STATE"
+                  title="Status"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                />
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   GitHub
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Created
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Warnings
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Duration
-                </th>
+                <SortableHeader
+                  field="CREATED_AT"
+                  title="Created"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                />
+                <SortableHeader
+                  field="WARNINGS_COUNT"
+                  title="Warnings"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                />
+                <SortableHeader
+                  field="DURATION"
+                  title="Duration"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                />
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Failure Reason
                 </th>
