@@ -27,5 +27,6 @@ export interface Migration {
   targetOrganizationName?: string;
   duration?: number;
   enterpriseName: string;
+  sourceUrl?: string;
   migrationSource?: MigrationSource;
 }
