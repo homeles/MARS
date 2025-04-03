@@ -11,6 +11,36 @@ interface SyncBody {
   state?: string;
 }
 
+interface OrgMigrationsResponse {
+  data: {
+    organization: {
+      repositoryMigrations: {
+        nodes: Array<{
+          id: string;
+          databaseId: string;
+          sourceUrl: string;
+          state: string;
+          warningsCount: number;
+          failureReason?: string;
+          createdAt: string;
+          repositoryName: string;
+          migrationSource?: {
+            id: string;
+            name: string;
+            type: string;
+            url: string;
+          };
+        }>;
+        pageInfo: {
+          hasPreviousPage: boolean;
+          startCursor: string | null;
+        };
+      };
+    };
+  };
+  errors?: Array<{ message: string }>;
+}
+
 // Get all migrations from local database
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -95,113 +125,130 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
     }
 
     let allMigrations: any[] = [];
-    let hasMorePages = true;
-    let cursor: string | undefined = undefined;
+    
+    // First, get the list of organizations
+    const orgQuery = `
+      query getOrganizations($enterprise: String!) {
+        enterprise(slug: $enterprise) {
+          organizations(first: 100) {
+            nodes {
+              id
+              login
+            }
+          }
+        }
+      }
+    `;
 
-    while (hasMorePages) {
-      // Query migrations using GraphQL
-      const query = `
-        query getEnterpriseMigrations($enterprise: String!, $before: String, $state: String) {
-          enterprise(slug: $enterprise) {
-            organizations(first: 100) {
-              nodes {
-                id
-                login
-                repositoryMigrations(
-                  before: $before,
-                  state: $state,
-                  last: 100,
-                  orderBy: {field: CREATED_AT, direction: DESC}
-                ) {
-                  nodes {
+    const orgsResponse = await axios.post(
+      GITHUB_GRAPHQL_URL,
+      {
+        query: orgQuery,
+        variables: { enterprise: enterpriseName }
+      },
+      {
+        headers: {
+          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      }
+    );
+
+    if (orgsResponse.data.errors) {
+      throw new Error(orgsResponse.data.errors[0].message);
+    }
+
+    const organizations = orgsResponse.data.data.enterprise.organizations.nodes;
+
+    // For each organization, fetch its migrations
+    for (const org of organizations) {
+      let hasMorePages = true;
+      let cursor: string | null = null;
+
+      while (hasMorePages) {
+        const migrationsQuery = `
+          query getOrgMigrations($org: String!, $before: String, $state: String) {
+            organization(login: $org) {
+              repositoryMigrations(
+                last: 100,
+                before: $before,
+                states: [$state],
+                orderBy: {field: CREATED_AT, direction: DESC}
+              ) {
+                nodes {
+                  id
+                  databaseId
+                  sourceUrl
+                  state
+                  warningsCount
+                  failureReason
+                  createdAt
+                  repositoryName
+                  migrationLogUrl
+                  migrationSource {
                     id
-                    databaseId
-                    sourceUrl
-                    state
-                    warningsCount
-                    failureReason
-                    createdAt
-                    repositoryName
-                    migrationLogUrl
-                    migrationSource {
-                      id
-                      name
-                      type
-                      url
-                    }
+                    name
+                    type
+                    url
                   }
-                  pageInfo {
-                    hasPreviousPage
-                    startCursor
-                  }
+                }
+                pageInfo {
+                  hasPreviousPage
+                  startCursor
                 }
               }
             }
           }
-        }
-      `;
+        `;
 
-      try {
-        const response = await axios.post(
-          GITHUB_GRAPHQL_URL,
-          {
-            query,
-            variables: { 
-              enterprise: enterpriseName,
-              before: cursor,
-              state: state
+        try {
+          const response: { data: OrgMigrationsResponse } = await axios.post(
+            GITHUB_GRAPHQL_URL,
+            {
+              query: migrationsQuery,
+              variables: {
+                org: org.login,
+                before: cursor,
+                state: state ? state.toUpperCase() : null
+              }
+            },
+            {
+              headers: {
+                'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              }
             }
-          },
-          {
-            headers: {
-              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            }
+          );
+
+          if (response.data.errors) {
+            console.error(`Error fetching migrations for org ${org.login}:`, response.data.errors);
+            continue;
           }
-        );
-        if (response.data.errors) {
-          throw new Error(response.data.errors[0].message);
-        }
 
-        const organizations = response.data.data.enterprise.organizations.nodes;
-        
-        // Process current page of migrations
-        organizations.forEach((org: any) => {
-          const orgMigrations = org.repositoryMigrations.nodes.map((m: any) => ({
+          const migrations = response.data.data.organization.repositoryMigrations;
+          const orgMigrations = migrations.nodes.map((m: any) => ({
             ...m,
             enterpriseName,
             organizationName: org.login
           }));
+          
           allMigrations = [...allMigrations, ...orgMigrations];
 
           // Update pagination info
-          if (org.repositoryMigrations.pageInfo.hasPreviousPage) {
-            hasMorePages = true;
-            cursor = org.repositoryMigrations.pageInfo.startCursor;
-          } else {
-            hasMorePages = false;
-          }
-        });
+          hasMorePages = migrations.pageInfo.hasPreviousPage;
+          cursor = migrations.pageInfo.startCursor;
 
-      } catch (graphqlError: any) {
-        const error = graphqlError as AxiosError;
-        console.error('GitHub GraphQL API Error:', {
-          enterprise: enterpriseName,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          errorMessage: error.response?.data,
-        });
-        throw error;
+          // Add a small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`Error fetching migrations for org ${org.login}:`, error);
+          continue;
+        }
       }
     }
 
-    // Filter migrations by state if specified
-    const filteredMigrations = state && state !== 'ALL'
-      ? allMigrations.filter(m => m.state === state.toUpperCase())
-      : allMigrations;
-
     // Save migrations to database
-    for (const migration of filteredMigrations) {
+    for (const migration of allMigrations) {
       const createdAtDate = new Date(migration.createdAt);
       if (isNaN(createdAtDate.getTime())) {
         console.error('Invalid createdAt date:', {
@@ -242,8 +289,8 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
 
     res.json({
       success: true,
-      total: filteredMigrations.length,
-      migrations: filteredMigrations,
+      total: allMigrations.length,
+      migrations: allMigrations,
       enterprise: enterpriseName
     });
 
