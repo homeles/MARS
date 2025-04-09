@@ -1,23 +1,43 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { ApolloClient, InMemoryCache, ApolloProvider, createHttpLink } from '@apollo/client';
+import { 
+  ApolloClient, 
+  InMemoryCache, 
+  ApolloProvider, 
+  split, 
+  HttpLink 
+} from '@apollo/client';
+import { getMainDefinition } from '@apollo/client/utilities';
+import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
+import { createClient } from 'graphql-ws';
 import { setContext } from '@apollo/client/link/context';
 import { ThemeProvider } from './utils/ThemeContext';
 import App from './App';
 import './index.css';
 
-// Create a HTTP link for Apollo Client
-const httpLink = createHttpLink({
-  uri: 'http://localhost:4000/graphql',
+// Create an HTTP link
+const httpLink = new HttpLink({
+  uri: 'http://localhost:4000/graphql'
 });
+
+// Create a WebSocket link
+const wsLink = new GraphQLWsLink(createClient({
+  url: 'ws://localhost:4000/graphql',
+  connectionParams: {
+    authToken: import.meta.env.VITE_GITHUB_TOKEN
+  },
+  retryAttempts: 5,
+  retryWait: (retries) => new Promise((resolve) => setTimeout(resolve, retries * 1000)),
+  shouldRetry: () => true,
+  onNonLazyError: (error) => {
+    console.error('WebSocket error:', error);
+  }
+}));
 
 // Add authentication to Apollo Client requests
 const authLink = setContext((_, { headers }) => {
-  // Get token from environment variable
   const token = import.meta.env.VITE_GITHUB_TOKEN;
-  
-  // Return the headers to the context
   return {
     headers: {
       ...headers,
@@ -26,15 +46,27 @@ const authLink = setContext((_, { headers }) => {
   };
 });
 
-// Create Apollo Client with retries
+// Split links for subscription support
+const splitLink = split(
+  ({ query }) => {
+    const definition = getMainDefinition(query);
+    return (
+      definition.kind === 'OperationDefinition' &&
+      definition.operation === 'subscription'
+    );
+  },
+  wsLink,
+  authLink.concat(httpLink)
+);
+
+// Create Apollo Client with subscription support
 const client = new ApolloClient({
-  link: authLink.concat(httpLink),
+  link: splitLink,
   cache: new InMemoryCache({
     typePolicies: {
       Query: {
         fields: {
           allMigrations: {
-            // Don't merge results, treat each page as separate
             keyArgs: ['state', 'enterpriseName', 'organizationName', 'search', 'orderBy'],
             merge: false
           }

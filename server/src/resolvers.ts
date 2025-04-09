@@ -13,6 +13,7 @@ interface GraphQLData {
     repositoryMigrations: {
       nodes: any[];
       pageInfo: PageInfo;
+      totalCount: number;
     };
   };
 }
@@ -24,9 +25,11 @@ interface GraphQLResponse {
 
 async function fetchOrganizationMigrations(organizationName: string, token: string) {
   let hasNextPage = true;
-  let endCursor: string | null = null;
+  let cursor: string | null = null;
   let page = 1;
   const allMigrations: any[] = [];
+  let totalMigrationsFound = 0;
+  let estimatedTotalPages = 1;
 
   while (hasNextPage) {
     logger.graphql('MigrationFetcher', organizationName, page, true);
@@ -49,6 +52,7 @@ async function fetchOrganizationMigrations(organizationName: string, token: stri
                 hasNextPage
                 endCursor
               }
+              totalCount
             }
           }
         }
@@ -60,7 +64,7 @@ async function fetchOrganizationMigrations(organizationName: string, token: stri
           query,
           variables: {
             org: organizationName,
-            cursor: endCursor
+            cursor: cursor
           }
         },
         {
@@ -79,22 +83,27 @@ async function fetchOrganizationMigrations(organizationName: string, token: stri
         throw new Error(`GraphQL Error: ${JSON.stringify(responseData.errors)}`);
       }
 
-      const { nodes, pageInfo }: { 
+      const { nodes, pageInfo, totalCount }: { 
         nodes: any[];
-        pageInfo: { hasNextPage: boolean; endCursor: string | null; }
+        pageInfo: { hasNextPage: boolean; endCursor: string | null; };
+        totalCount: number;
       } = responseData.data.organization.repositoryMigrations;
       
-      logger.info('MigrationFetcher', 'Fetched migrations page', {
-        organization: organizationName,
-        page,
-        nodesCount: nodes.length,
-        hasMore: pageInfo.hasNextPage
-      });
+      // Calculate total pages based on total count (100 items per page)
+      if (page === 1) {
+        estimatedTotalPages = Math.ceil(totalCount / 100);
+      }
+
+      totalMigrationsFound += nodes.length;
+      logger.progress('MigrationFetcher', organizationName, page, estimatedTotalPages, totalMigrationsFound);
 
       allMigrations.push(...nodes);
       hasNextPage = pageInfo.hasNextPage;
-      endCursor = pageInfo.endCursor;
+      cursor = pageInfo.endCursor;
       page++;
+
+      // Add a small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (error) {
       logger.error('MigrationFetcher', 'Failed to fetch migrations', {
         organization: organizationName,
@@ -111,5 +120,5 @@ async function fetchOrganizationMigrations(organizationName: string, token: stri
     totalMigrations: allMigrations.length
   });
 
-  return allMigrations;
+  return { migrations: allMigrations, totalPages: page - 1 };
 }

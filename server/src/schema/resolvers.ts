@@ -1,6 +1,19 @@
+import { withFilter } from 'graphql-subscriptions';
 import mongoose from 'mongoose';
 import axios from 'axios';
 import { MigrationState, RepositoryMigration, OrgAccessStatus, IRepositoryMigration } from '../models/RepositoryMigration';
+import { pubsub, SYNC_PROGRESS_UPDATED, SYNC_HISTORY_UPDATED } from '../index';
+import { logger } from '../utils/logger';
+import { UserPreference } from '../models/UserPreference';
+import { SyncHistory } from '../models/SyncHistory';
+import { 
+  userPreferenceResolvers, 
+  syncHistoryResolvers, 
+  createSyncHistory, 
+  updateSyncHistory, 
+  updateOrgSyncHistory, 
+  completeSyncHistory 
+} from '../utils/resolverUtils';
 
 // GraphQL pagination and order types
 interface PageInfo {
@@ -182,9 +195,10 @@ interface OrgMigrationsResponse {
   errors?: Array<{ message: string }>;
 }
 
-async function fetchOrganizationMigrations(orgLogin: string, token: string) {
+async function fetchOrganizationMigrations(orgLogin: string, token: string): Promise<{ migrations: any[]; totalPages: number }> {
   let hasNextPage = true;
   let cursor: string | null = null;
+  let currentPage = 1;
   const allMigrations: any[] = [];
 
   while (hasNextPage) {
@@ -222,6 +236,8 @@ async function fetchOrganizationMigrations(orgLogin: string, token: string) {
         }
       `;
 
+      console.log(`[Sync] Fetching page ${currentPage} for organization ${orgLogin}`);
+      
       const response: { data: OrgMigrationsResponse } = await axios.post(
         GITHUB_GRAPHQL_URL,
         {
@@ -248,6 +264,7 @@ async function fetchOrganizationMigrations(orgLogin: string, token: string) {
       allMigrations.push(...migrations.nodes);
       hasNextPage = migrations.pageInfo.hasPreviousPage;
       cursor = migrations.pageInfo.startCursor;
+      currentPage++;
 
       // Add a small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -257,7 +274,7 @@ async function fetchOrganizationMigrations(orgLogin: string, token: string) {
     }
   }
 
-  return allMigrations;
+  return { migrations: allMigrations, totalPages: currentPage - 1 };
 }
 
 async function processMigration(migration: any, enterpriseName: string, orgLogin: string) {
@@ -306,6 +323,68 @@ async function processMigration(migration: any, enterpriseName: string, orgLogin
     });
     throw error;
   }
+}
+
+async function fetchMigrationsPage(orgLogin: string, token: string, cursor: string | null) {
+  const query = `
+    query getOrgMigrations($org: String!, $before: String) {
+      organization(login: $org) {
+        repositoryMigrations(
+          last: 100,
+          before: $before,
+          orderBy: {field: CREATED_AT, direction: DESC}
+        ) {
+          nodes {
+            id
+            databaseId
+            sourceUrl
+            state
+            warningsCount
+            failureReason
+            createdAt
+            repositoryName
+            migrationSource {
+              id
+              name
+              type
+              url
+            }
+          }
+          pageInfo {
+            hasPreviousPage
+            startCursor
+          }
+          totalCount
+        }
+      }
+    }
+  `;
+
+  const response = await axios.post(
+    GITHUB_GRAPHQL_URL,
+    {
+      query,
+      variables: { org: orgLogin, before: cursor }
+    },
+    {
+      headers: {
+        'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      }
+    }
+  );
+
+  if (response.data?.errors) {
+    throw new Error(`GraphQL Error: ${JSON.stringify(response.data.errors)}`);
+  }
+
+  const migrations = response.data.data.organization.repositoryMigrations;
+  return {
+    migrations: migrations.nodes,
+    hasNextPage: migrations.pageInfo.hasPreviousPage,
+    cursor: migrations.pageInfo.startCursor,
+    totalCount: migrations.totalCount
+  };
 }
 
 export const resolvers = {
@@ -506,8 +585,8 @@ export const resolvers = {
       // Get migrations for each organization
       for (const org of orgs) {
         try {
-          const orgMigrations = await fetchOrganizationMigrations(org.login, token);
-          allMigrations = [...allMigrations, ...orgMigrations];
+          const { migrations } = await fetchOrganizationMigrations(org.login, token);
+          allMigrations = [...allMigrations, ...migrations];
         } catch (error) {
           console.error(`Error fetching migrations for org ${org.login}:`, error);
           continue;
@@ -595,35 +674,289 @@ export const resolvers = {
         
         console.log(`[Sync] Found ${organizations.length} organizations to process`);
 
+        // Define a more comprehensive interface for progress tracking
+        interface SyncProgressItem {
+          organizationName: string;
+          totalPages: number;
+          currentPage: number;
+          migrationsCount: number;
+          isCompleted: boolean;
+          error?: string;
+          estimatedTimeRemainingMs?: number;
+          elapsedTimeMs?: number;
+          processingRate?: number;
+        }
+
+        const progress: SyncProgressItem[] = [];
+
+        // Initialize progress for all organizations
+        organizations.forEach((org: { login: string }) => {
+          progress.push({
+            organizationName: org.login,
+            totalPages: 0,
+            currentPage: 0,
+            migrationsCount: 0,
+            isCompleted: false
+          });
+        });
+
+        // Initial progress update
+        pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+          syncProgressUpdated: progress,
+          enterpriseName 
+        });
+
+        // Generate a unique syncId for this sync operation
+        const syncId = `sync-${Date.now()}`;
+        logger.info('SyncMigrations', `Starting sync with ID: ${syncId}`, { 
+          enterpriseName, 
+          organizationsCount: organizations.length,
+          selectedOrgs: organizations.map((o: { login: string }) => o.login)
+        }, syncId);
+        
         // Process each organization
         for (const org of organizations) {
-          console.log(`[Sync] Processing organization: ${org.login}`);
+          const orgIndex = progress.findIndex(p => p.organizationName === org.login);
+          
+          // Start tracking sync for this organization
+          logger.syncStart('SyncMigrations', org.login, syncId);
+          
           try {
-            const migrations = await fetchOrganizationMigrations(org.login, token);
-            console.log(`[Sync] Processing ${migrations.length} migrations for ${org.login}`);
+            let hasNextPage = true;
+            let cursor: string | null = null;
+            let currentPage = 1;
+            let totalMigrations = 0;
+            let estimatedTotalPages = 0;
 
-            // Process migrations for this org
-            for (const migration of migrations) {
-              try {
+            // Make an initial request to get total count estimate
+            const initialResult = await fetchMigrationsPage(org.login, token, null);
+            if (initialResult.totalCount) {
+              estimatedTotalPages = Math.ceil(initialResult.totalCount / 100);
+              progress[orgIndex].totalPages = estimatedTotalPages;
+              
+              logger.info('SyncMigrations', `Initial estimate for ${org.login}`, {
+                organization: org.login,
+                estimatedTotalMigrations: initialResult.totalCount,
+                estimatedTotalPages
+              }, syncId);
+            }
+            
+            // Process the initial results
+            totalMigrations = initialResult.migrations.length;
+            progress[orgIndex].migrationsCount = totalMigrations;
+            progress[orgIndex].currentPage = currentPage;
+            
+            // Publish progress update immediately after getting the first data
+            pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+              syncProgressUpdated: progress,
+              enterpriseName 
+            });
+            
+            // Process migrations from initial request
+            if (initialResult.migrations.length > 0) {
+              for (const migration of initialResult.migrations) {
                 await processMigration(migration, enterpriseName, org.login);
-              } catch (migrationError) {
-                console.error(`[Sync] Error processing migration ${migration.id} for ${org.login}:`, migrationError);
               }
             }
             
-            console.log(`[Sync] Completed processing organization: ${org.login}`);
+            // Update pagination info from initial request
+            hasNextPage = initialResult.hasNextPage;
+            cursor = initialResult.cursor;
+            currentPage++;
+
+            // Publish initial progress
+            const progressDetails = logger.progress(
+              'SyncMigrations', 
+              org.login, 
+              currentPage - 1,
+              estimatedTotalPages, 
+              totalMigrations,
+              syncId
+            );
+            
+            // Include estimated time info in progress updates
+            progress[orgIndex].estimatedTimeRemainingMs = progressDetails.estimatedTimeRemainingMs;
+            progress[orgIndex].elapsedTimeMs = progressDetails.elapsedTimeMs;
+            progress[orgIndex].processingRate = progressDetails.processingRate;
+            
+            pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+              syncProgressUpdated: progress,
+              enterpriseName 
+            });
+
+            // Process remaining pages
+            while (hasNextPage) {
+              // Update progress before each page fetch
+              progress[orgIndex].currentPage = currentPage;
+              pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+                syncProgressUpdated: progress,
+                enterpriseName 
+              });
+
+              // Log GraphQL request
+              logger.graphql('SyncMigrations', org.login, currentPage, hasNextPage, syncId);
+              
+              // Initial update indicating data fetching has started for this page
+              const currentTime = Date.now();
+              const startTime = Date.now() - 5000; // Estimate a reasonable start time
+              progress[orgIndex].elapsedTimeMs = currentTime - startTime;
+              pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+                syncProgressUpdated: progress,
+                enterpriseName 
+              });
+              
+              // Fetch the data for this page
+              let result: { 
+                migrations: any[]; 
+                hasNextPage: boolean; 
+                cursor: string | null;
+                totalCount?: number;
+              };
+              
+              try {
+                result = await fetchMigrationsPage(org.login, token, cursor);
+              } catch (pageError) {
+                // Check if this is the missing migration source error
+                const errorMsg = pageError instanceof Error ? pageError.message : 'Unknown error';
+                if (errorMsg.includes('Migration source not found with ID')) {
+                  logger.info('SyncMigrations', `Missing migration source detected, skipping to next page`, {
+                    organization: org.login,
+                    error: errorMsg,
+                    currentPage,
+                    syncId
+                  });
+                  // End pagination as we can't reliably continue with the cursor
+                  hasNextPage = false;
+                  break;
+                } else {
+                  // For other errors, rethrow
+                  throw pageError;
+                }
+              }
+              
+              // Quick update right after data is received, before processing starts
+              if (result && result.migrations && result.migrations.length > 0) {
+                // Update counters but don't process yet
+                totalMigrations += result.migrations.length;
+                progress[orgIndex].migrationsCount = totalMigrations;
+                progress[orgIndex].totalPages = Math.max(progress[orgIndex].totalPages, estimatedTotalPages);
+                
+                // Send an immediate progress update to show we've fetched new data
+                pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+                  syncProgressUpdated: progress,
+                  enterpriseName 
+                });
+                
+                // Begin processing the migrations
+                let processedCount = 0;
+                const batchSize = 10; // Process in smaller batches
+                
+                // Process migrations in batches without creating complex arrays
+                for (let i = 0; i < result.migrations.length; i += batchSize) {
+                  const end = Math.min(i + batchSize, result.migrations.length);
+                  
+                  // Process this batch
+                  for (let j = i; j < end; j++) {
+                    const migration = result.migrations[j];
+                    await processMigration(migration, enterpriseName, org.login);
+                    processedCount++;
+                  }
+                  
+                  // Update UI after each batch
+                  const progressDetails = logger.progress(
+                    'SyncMigrations', 
+                    org.login, 
+                    currentPage - 1,
+                    estimatedTotalPages || currentPage, 
+                    totalMigrations,
+                    syncId
+                  );
+                  
+                  // Include estimated time info in progress updates
+                  progress[orgIndex].estimatedTimeRemainingMs = progressDetails.estimatedTimeRemainingMs;
+                  progress[orgIndex].elapsedTimeMs = progressDetails.elapsedTimeMs;
+                  progress[orgIndex].processingRate = progressDetails.processingRate;
+                  
+                  // Send batch progress update
+                  pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+                    syncProgressUpdated: progress,
+                    enterpriseName 
+                  });
+                }
+                
+                // Update pagination info
+                hasNextPage = result.hasNextPage;
+                cursor = result.cursor;
+                currentPage++;
+                
+                // Update progress with new metrics
+                progress[orgIndex].totalPages = Math.max(progress[orgIndex].totalPages, estimatedTotalPages);
+                
+                // Get final page progress metrics with timing info
+                const finalProgressDetails = logger.progress(
+                  'SyncMigrations', 
+                  org.login, 
+                  currentPage - 1,
+                  estimatedTotalPages || currentPage, 
+                  totalMigrations,
+                  syncId
+                );
+                
+                // Include estimated time info in progress updates
+                progress[orgIndex].estimatedTimeRemainingMs = finalProgressDetails.estimatedTimeRemainingMs;
+                progress[orgIndex].elapsedTimeMs = finalProgressDetails.elapsedTimeMs;
+                progress[orgIndex].processingRate = finalProgressDetails.processingRate;
+                
+                // Send updated progress to clients
+                pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+                  syncProgressUpdated: progress,
+                  enterpriseName 
+                });
+
+                // Add a small delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              } else {
+                hasNextPage = false;
+              }
+            }
+            
+            // Mark as completed and log completion
+            progress[orgIndex].isCompleted = true;
+            logger.syncComplete('SyncMigrations', org.login, totalMigrations, syncId);
+            
+            pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+              syncProgressUpdated: progress,
+              enterpriseName 
+            });
           } catch (orgError) {
-            console.error(`[Sync] Error processing organization ${org.login}:`, orgError);
+            // Handle errors
+            logger.error('SyncMigrations', `Error syncing organization ${org.login}`, {
+              organization: org.login,
+              error: orgError instanceof Error ? orgError.message : 'Unknown error',
+              stack: orgError instanceof Error ? orgError.stack : undefined
+            }, syncId);
+            
+            progress[orgIndex].error = orgError instanceof Error ? orgError.message : 'Unknown error';
+            progress[orgIndex].isCompleted = true;
+            pubsub.publish(SYNC_PROGRESS_UPDATED, { 
+              syncProgressUpdated: progress,
+              enterpriseName 
+            });
           }
         }
 
         console.log(`[Sync] Completed full sync for enterprise: ${enterpriseName}`);
-        return { success: true, message: 'Sync completed successfully' };
+        return { 
+          success: true, 
+          message: 'Sync completed successfully',
+          progress 
+        };
       } catch (error) {
         console.error(`[Sync] Error during sync process:`, error);
         return { 
           success: false, 
-          message: error instanceof Error ? error.message : 'An unknown error occurred' 
+          message: error instanceof Error ? error.message : 'An unknown error occurred',
+          progress: [] 
         };
       }
     },
@@ -666,7 +999,8 @@ export const resolvers = {
       }
 
       const orgs = orgsResponse.data.data.enterprise.organizations.nodes;
-      const results = [];
+      // Use any[] to avoid TypeScript errors when pushing MongoDB document objects
+      const results: any[] = [];
 
       // Check access for each organization
       for (const org of orgs as Organization[]) {
@@ -724,5 +1058,37 @@ export const resolvers = {
 
       return results;
     }
-  }
+  },
+
+  Subscription: {
+    syncProgressUpdated: {
+      subscribe: withFilter(
+        // Use a function wrapper that provides the asyncIterator without TypeScript complaining
+        function() {
+          // @ts-ignore - asyncIterator exists at runtime but TypeScript doesn't know about it
+          return pubsub.asyncIterator([SYNC_PROGRESS_UPDATED]);
+        },
+        function(payload: any, args: { enterpriseName: string } | undefined): boolean {
+          if (!payload || !args) return false;
+          console.log('Subscription filter:', payload.enterpriseName, args.enterpriseName);
+          return payload.enterpriseName === args.enterpriseName;
+        }
+      ),
+    },
+  },
 };
+
+export interface SyncProgressPayload {
+  syncProgressUpdated: Array<{
+    organizationName: string;
+    totalPages: number;
+    currentPage: number;
+    migrationsCount: number;
+    isCompleted: boolean;
+    error?: string;
+    estimatedTimeRemainingMs?: number;
+    elapsedTimeMs?: number;
+    processingRate?: number;
+  }>;
+  enterpriseName: string;
+}

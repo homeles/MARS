@@ -1,13 +1,22 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation } from '@apollo/client';
+import { useQuery, useMutation, useSubscription } from '@apollo/client';
 import { logger } from '../utils/logger';
 import { gql } from '@apollo/client';
+import SyncProgress from '../components/SyncProgress';
 
 const SYNC_MIGRATIONS = gql`
   mutation SyncMigrations($enterpriseName: String!, $token: String!, $selectedOrganizations: [String!]) {
     syncMigrations(enterpriseName: $enterpriseName, token: $token, selectedOrganizations: $selectedOrganizations) {
       success
       message
+      progress {
+        organizationName
+        totalPages
+        currentPage
+        migrationsCount
+        isCompleted
+        error
+      }
     }
   }
 `;
@@ -48,6 +57,22 @@ const GET_ORG_ACCESS_STATUS = gql`
   }
 `;
 
+const SYNC_PROGRESS_SUBSCRIPTION = gql`
+  subscription OnSyncProgressUpdated($enterpriseName: String!) {
+    syncProgressUpdated(enterpriseName: $enterpriseName) {
+      organizationName
+      totalPages
+      currentPage
+      migrationsCount
+      isCompleted
+      error
+      estimatedTimeRemainingMs
+      elapsedTimeMs
+      processingRate
+    }
+  }
+`;
+
 interface AccessStatus {
   orgLogin: string;
   hasAccess: boolean;
@@ -64,6 +89,14 @@ export const Settings: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<Error | null>(null);
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>([]);
+  const [syncProgress, setSyncProgress] = useState<Array<{
+    organizationName: string;
+    totalPages: number;
+    currentPage: number;
+    migrationsCount: number;
+    isCompleted: boolean;
+    error?: string;
+  }>>([]);
   
   const [syncMigrations] = useMutation(SYNC_MIGRATIONS);
   const [checkOrgAccessMutation] = useMutation(CHECK_ORG_ACCESS);
@@ -82,11 +115,43 @@ export const Settings: React.FC = () => {
 
   const accessStatuses: AccessStatus[] = accessData?.orgAccessStatus || [];
 
+  // Add subscription with improved error handling and logging
+  useSubscription(
+    SYNC_PROGRESS_SUBSCRIPTION,
+    {
+      variables: { enterpriseName: selectedEnterprise },
+      skip: !selectedEnterprise || !syncing, // Only subscribe when enterprise is selected and sync is in progress
+      onData: ({ data }) => {
+        if (data?.data?.syncProgressUpdated) {
+          const progressUpdate = data.data.syncProgressUpdated;
+          console.log('Received sync progress update:', progressUpdate);
+          
+          // Update the progress state
+          setSyncProgress(progressUpdate);
+          
+          // Check if all organizations are completed or have errors
+          const allCompleted = progressUpdate.every((org: { isCompleted: boolean }) => org.isCompleted === true);
+          if (allCompleted && syncing) {
+            console.log('All organizations completed syncing');
+            // Add a small delay to ensure the final progress state is displayed
+            setTimeout(() => setSyncing(false), 1000);
+          }
+        }
+      },
+      onError: (error) => {
+        console.error('Subscription error:', error);
+        logger.error('Sync progress subscription error', { error: error.message });
+        // Set syncing to false on error to allow restarting
+        setSyncing(false);
+      }
+    }
+  );
+
   const handleOrgSelection = (orgLogin: string, checked: boolean) => {
     if (checked) {
       setSelectedOrgs([...selectedOrgs, orgLogin]);
     } else {
-      setSelectedOrgs(selectedOrgs.filter(org => org !== orgLogin));
+      setSelectedOrgs(selectedOrgs.filter((org: string) => org !== orgLogin));
     }
   };
 
@@ -128,6 +193,25 @@ export const Settings: React.FC = () => {
     setSyncError(null);
     
     try {
+      // Initialize progress for selected organizations - this serves as the initial state
+      // before subscription updates start flowing in
+      const initialProgress = selectedOrgs.length > 0 
+        ? selectedOrgs.map(org => ({
+            organizationName: org,
+            totalPages: 0,
+            currentPage: 0,
+            migrationsCount: 0,
+            isCompleted: false,
+            error: undefined,
+            estimatedTimeRemainingMs: undefined,
+            elapsedTimeMs: undefined,
+            processingRate: undefined
+          }))
+        : [];
+      
+      setSyncProgress(initialProgress);
+      console.log('Starting sync with initial progress:', initialProgress);
+
       const result = await syncMigrations({
         variables: {
           enterpriseName: selectedEnterprise,
@@ -137,18 +221,26 @@ export const Settings: React.FC = () => {
       });
 
       if (result.data.syncMigrations.success) {
-        alert('Successfully synced migrations!');
+        // Initial progress update from the mutation result
+        if (result.data.syncMigrations.progress?.length > 0) {
+          console.log('Initial progress from mutation:', result.data.syncMigrations.progress);
+          setSyncProgress(result.data.syncMigrations.progress);
+        }
+        
+        // Keep syncing flag true to maintain subscription
+        // We'll set it to false when all orgs are completed or on error
       } else {
-        alert(`Error syncing migrations: ${result.data.syncMigrations.message}`);
+        setSyncError(new Error(result.data.syncMigrations.message));
+        setSyncing(false); // Stop syncing flag on error
       }
     } catch (error) {
       setSyncError(error instanceof Error ? error : new Error('Unknown error occurred'));
+      setSyncing(false); // Stop syncing flag on error
+      
       const logData: LogData = {
         error: error instanceof Error ? error.message : 'Unknown error occurred'
       };
       logger.error('Error syncing migrations:', logData);
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -184,6 +276,23 @@ export const Settings: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Move Sync Progress here, right after the buttons */}
+        {(syncing || syncProgress.length > 0) && (
+          <div className="mb-6 border-t border-gray-200 dark:border-gray-700 pt-6">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+              Sync Progress
+            </h3>
+            <div className="space-y-4">
+              {syncProgress.map((progress) => (
+                <SyncProgress
+                  key={progress.organizationName}
+                  {...progress}
+                />
+              ))}
+            </div>
+          </div>
+        )}
         
         {syncError && (
           <div className="mt-4 p-4 bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-300 rounded-md">

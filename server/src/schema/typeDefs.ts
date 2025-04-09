@@ -96,6 +96,46 @@ export const typeDefs = gql`
     enterpriseName: String!
   }
 
+  type SyncProgress {
+    organizationName: String!
+    totalPages: Int!
+    currentPage: Int!
+    migrationsCount: Int!
+    isCompleted: Boolean!
+    error: String
+    estimatedTimeRemainingMs: Int
+    elapsedTimeMs: Int
+    processingRate: Float
+  }
+
+  type OrgSyncHistory {
+    login: String!
+    totalMigrations: Int!
+    totalPages: Int!
+    latestMigrationDate: String
+    errors: [String]
+    elapsedTimeMs: Int!
+  }
+
+  type SyncHistory {
+    id: ID!
+    syncId: String!
+    enterpriseName: String!
+    startTime: String!
+    endTime: String
+    organizations: [OrgSyncHistory!]!
+    status: String!
+    completedOrganizations: Int!
+    totalOrganizations: Int!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type UserPreference {
+    key: String!
+    value: String!
+  }
+
   type Query {
     enterprise(slug: String!): Enterprise
     allMigrations(
@@ -114,6 +154,9 @@ export const typeDefs = gql`
     migration(id: ID!): RepositoryMigration
     enterpriseStats(enterpriseName: String!): EnterpriseStats!
     orgAccessStatus(enterpriseName: String!): [OrgAccessStatus!]!
+    syncHistory(syncId: String): SyncHistory
+    syncHistories(enterpriseName: String!, limit: Int, offset: Int): [SyncHistory!]!
+    userPreferences(keys: [String!]): [UserPreference!]!
   }
 
   type EnterpriseStats {
@@ -127,11 +170,25 @@ export const typeDefs = gql`
   type MigrationResponse {
     success: Boolean!
     message: String
+    progress: [SyncProgress!]
   }
 
   type Mutation {
     syncMigrations(enterpriseName: String!, token: String!, selectedOrganizations: [String!]): MigrationResponse!
     updateMigrationState(githubId: ID!, state: MigrationState!): RepositoryMigration
     checkOrgAccess(enterpriseName: String!, token: String!): [OrgAccessStatus!]!
+    saveUserPreference(key: String!, value: String!): UserPreference!
+    saveUserPreferences(preferences: [UserPreferenceInput!]!): [UserPreference!]!
+    deleteUserPreference(key: String!): Boolean!
+  }
+
+  input UserPreferenceInput {
+    key: String!
+    value: String!
+  }
+
+  type Subscription {
+    syncProgressUpdated(enterpriseName: String!): [SyncProgress!]!
+    syncHistoryUpdated(enterpriseName: String!, syncId: String): SyncHistory!
   }
 `;
