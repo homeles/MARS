@@ -11,7 +11,7 @@ interface SyncHistory {
   migrationsCount: number;
   error?: string;
   // Additional properties used in rendering
-  organizations?: Array<{name?: string; login?: string}>;
+  organizations?: Array<{name?: string; login?: string; totalMigrations?: number}>;
   organizationNames?: string[];
   migrations?: Array<any>;
   repositoryMigrations?: Array<any>;

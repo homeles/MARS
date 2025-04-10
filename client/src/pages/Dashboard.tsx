@@ -43,13 +43,14 @@ const GET_ORGANIZATIONS = gql`
 `;
 
 const GET_MIGRATIONS = gql`
-  query GetMigrations($state: MigrationState, $pageSize: Int, $page: Int, $orderBy: MigrationOrder, $search: String) {
+  query GetMigrations($state: MigrationState, $pageSize: Int, $page: Int, $orderBy: MigrationOrder, $search: String, $organizationName: String) {
     allMigrations(
       state: $state,
       pageSize: $pageSize,
       page: $page,
       orderBy: $orderBy,
-      search: $search
+      search: $search,
+      organizationName: $organizationName
     ) {
       nodes {
         id
@@ -83,12 +84,26 @@ const GET_MIGRATIONS = gql`
 `;
 
 export const Dashboard: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>('');
-  const [selectedOrg, setSelectedOrg] = useState('');
+  // Retrieve stored filters from localStorage
+  const getStoredFilters = () => {
+    try {
+      const storedFilters = localStorage.getItem('dashboard_filters');
+      return storedFilters ? JSON.parse(storedFilters) : null;
+    } catch (error) {
+      logger.error('Error parsing stored filters', { error });
+      return null;
+    }
+  };
+  
+  // Initialize state with values from localStorage or defaults
+  const storedFilters = getStoredFilters();
+  const [searchQuery, setSearchQuery] = useState(storedFilters?.searchQuery || '');
+  const [selectedStatus, setSelectedStatus] = useState<MigrationState | ''>(storedFilters?.selectedStatus || '');
+  const [selectedOrg, setSelectedOrg] = useState(storedFilters?.selectedOrg || '');
   const [loadingMore, setLoadingMore] = useState(false);
-  const [pageSize, setPageSize] = useState<number>(30);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(storedFilters?.pageSize || 30);
+  const [currentPage, setCurrentPage] = useState(storedFilters?.currentPage || 1);
+  
   // Add debounced search query
   const [debouncedSearch] = useState(() => 
     debounce((query: string) => {
@@ -97,8 +112,19 @@ export const Dashboard: React.FC = () => {
         search: query || undefined,
         page: 1
       });
+      // Save the updated search to localStorage
+      saveFiltersToLocalStorage({ ...getStoredFilters(), searchQuery: query, currentPage: 1 });
     }, 300)
   );
+  
+  // Function to save filters to localStorage
+  const saveFiltersToLocalStorage = (filters: any) => {
+    try {
+      localStorage.setItem('dashboard_filters', JSON.stringify(filters));
+    } catch (error) {
+      logger.error('Error saving filters to localStorage', { error });
+    }
+  };
 
   // Fetch organizations for the dropdown
   const { data: organizationsData } = useQuery(GET_ORGANIZATIONS, {
@@ -106,30 +132,54 @@ export const Dashboard: React.FC = () => {
   });
   const organizations = organizationsData?.enterprise?.organizations?.nodes?.map((node: { login: string }) => node.login) || [];
 
+  // Add sort state management with localStorage persistence
+  const [sortField, setSortField] = useState<'CREATED_AT' | 'REPOSITORY_NAME' | 'ORGANIZATION_NAME' | 'STATE' | 'WARNINGS_COUNT' | 'DURATION'>(
+    storedFilters?.sortField || 'CREATED_AT'
+  );
+  const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>(
+    storedFilters?.sortDirection || 'DESC'
+  );
+
   const clearAllFilters = () => {
+    // Clear state
     setSearchQuery('');
     setSelectedStatus('');
     setSelectedOrg('');
+    setCurrentPage(1);
+    
+    // Clear localStorage
+    localStorage.removeItem('dashboard_filters');
+    
+    // Refetch with cleared filters
     refetch({
       search: undefined,
       state: undefined,
-      organizationName: undefined
+      organizationName: undefined,
+      page: 1
     });
   };
 
-  // Add sort state management
-  const [sortField, setSortField] = useState<'CREATED_AT' | 'REPOSITORY_NAME' | 'ORGANIZATION_NAME' | 'STATE' | 'WARNINGS_COUNT' | 'DURATION'>('CREATED_AT');
-  const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('DESC');
-
   const handleSort = (field: typeof sortField) => {
+    let newDirection: 'ASC' | 'DESC';
+    
     if (field === sortField) {
       // If clicking the same field, toggle direction
-      setSortDirection(sortDirection === 'ASC' ? 'DESC' : 'ASC');
+      newDirection = sortDirection === 'ASC' ? 'DESC' : 'ASC';
+      setSortDirection(newDirection);
     } else {
       // If clicking a new field, set it with DESC direction
       setSortField(field);
-      setSortDirection('DESC');
+      newDirection = 'DESC';
+      setSortDirection(newDirection);
     }
+    
+    // Save updated sort preferences to localStorage
+    const currentFilters = getStoredFilters() || {};
+    saveFiltersToLocalStorage({
+      ...currentFilters,
+      sortField: field,
+      sortDirection: newDirection
+    });
   };
 
   // Update useQuery variables to include current sort
@@ -154,6 +204,7 @@ export const Dashboard: React.FC = () => {
     const value = e.target.value;
     setSearchQuery(value);
     debouncedSearch(value);
+    // Note: We don't need to save here because debouncedSearch already saves to localStorage
   };
 
   const migrations = data?.allMigrations?.nodes || [];
@@ -321,14 +372,21 @@ export const Dashboard: React.FC = () => {
     try {
       setCurrentPage(page);
       
+      // Save the current page to localStorage
+      const currentFilters = getStoredFilters() || {};
+      saveFiltersToLocalStorage({
+        ...currentFilters,
+        currentPage: page
+      });
+      
       await refetch({
         page,
         pageSize,
         state: selectedStatus || undefined,
         organizationName: selectedOrg || undefined,
         orderBy: {
-          field: 'CREATED_AT',
-          direction: 'DESC'
+          field: sortField,
+          direction: sortDirection
         },
         search: searchQuery || undefined
       });
@@ -434,7 +492,17 @@ export const Dashboard: React.FC = () => {
         </div>
         <select
           value={selectedStatus}
-          onChange={(e) => setSelectedStatus(e.target.value as MigrationState | '')}
+          onChange={(e) => {
+            const value = e.target.value as MigrationState | '';
+            setSelectedStatus(value);
+            // Save status filter to localStorage
+            const currentFilters = getStoredFilters() || {};
+            saveFiltersToLocalStorage({
+              ...currentFilters,
+              selectedStatus: value,
+              currentPage: 1  // Reset to first page when filtering
+            });
+          }}
           className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
         >
           <option value="">All Statuses</option>
@@ -444,7 +512,17 @@ export const Dashboard: React.FC = () => {
         </select>
         <select
           value={selectedOrg}
-          onChange={(e) => setSelectedOrg(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value;
+            setSelectedOrg(value);
+            // Save org filter to localStorage
+            const currentFilters = getStoredFilters() || {};
+            saveFiltersToLocalStorage({
+              ...currentFilters,
+              selectedOrg: value,
+              currentPage: 1  // Reset to first page when filtering
+            });
+          }}
           className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
         >
           <option value="">All Organizations</option>
@@ -454,7 +532,17 @@ export const Dashboard: React.FC = () => {
         </select>
         <select
           value={pageSize}
-          onChange={(e) => setPageSize(Number(e.target.value))}
+          onChange={(e) => {
+            const value = Number(e.target.value);
+            setPageSize(value);
+            // Save page size to localStorage
+            const currentFilters = getStoredFilters() || {};
+            saveFiltersToLocalStorage({
+              ...currentFilters,
+              pageSize: value,
+              currentPage: 1  // Reset to first page when changing page size
+            });
+          }}
           className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
         >
           <option value={10}>10 per page</option>

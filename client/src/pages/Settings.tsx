@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useSubscription } from '@apollo/client';
 import { logger } from '../utils/logger';
 import { gql } from '@apollo/client';
@@ -134,7 +134,16 @@ export const Settings: React.FC = () => {
   const [checkingAccess, setCheckingAccess] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<Error | null>(null);
-  const [selectedOrgs, setSelectedOrgs] = useState<string[]>([]);
+  // Initialize selectedOrgs from localStorage or empty array
+  const [selectedOrgs, setSelectedOrgs] = useState<string[]>(() => {
+    try {
+      const storedOrgs = localStorage.getItem('selectedOrganizations');
+      return storedOrgs ? JSON.parse(storedOrgs) : [];
+    } catch (error) {
+      console.error('Error loading stored organizations:', error);
+      return [];
+    }
+  });
   const [syncHistoryLimit] = useState<number>(10); // Number of records to fetch
   const [syncProgress, setSyncProgress] = useState<Array<{
     organizationName: string;
@@ -181,6 +190,36 @@ export const Settings: React.FC = () => {
     }
   });
 
+  // Effect to load organizations from the last sync if there are no stored selections
+  useEffect(() => {
+    if (selectedOrgs.length === 0 && 
+        syncHistoriesData?.syncHistories && 
+        syncHistoriesData.syncHistories.length > 0) {
+      
+      // Get the most recent sync history
+      const latestSync = syncHistoriesData.syncHistories[0];
+      
+      // Extract organization logins from the successful sync
+      if (latestSync && latestSync.status === 'completed' && latestSync.organizations) {
+        const syncedOrgs = latestSync.organizations
+          .filter((org: { login?: string }) => org && org.login)
+          .map((org: { login: string }) => org.login);
+        
+        if (syncedOrgs.length > 0) {
+          console.log('Pre-selecting organizations from the most recent sync:', syncedOrgs);
+          setSelectedOrgs(syncedOrgs);
+          
+          // Save to localStorage
+          try {
+            localStorage.setItem('selectedOrganizations', JSON.stringify(syncedOrgs));
+          } catch (error) {
+            console.error('Error saving organization selection to localStorage:', error);
+          }
+        }
+      }
+    }
+  }, [syncHistoriesData, selectedOrgs.length]);
+
   const organizations = organizationsData?.enterprise?.organizations?.nodes?.map((node: { login: string }) => node.login) || [];
 
   const { data: accessData, refetch: refetchAccess } = useQuery(GET_ORG_ACCESS_STATUS, {
@@ -223,21 +262,38 @@ export const Settings: React.FC = () => {
   );
 
   const handleOrgSelection = (orgLogin: string, checked: boolean) => {
+    let newSelectedOrgs: string[];
     if (checked) {
-      setSelectedOrgs([...selectedOrgs, orgLogin]);
+      newSelectedOrgs = [...selectedOrgs, orgLogin];
     } else {
-      setSelectedOrgs(selectedOrgs.filter((org: string) => org !== orgLogin));
+      newSelectedOrgs = selectedOrgs.filter((org: string) => org !== orgLogin);
+    }
+    // Update state
+    setSelectedOrgs(newSelectedOrgs);
+    // Save to localStorage
+    try {
+      localStorage.setItem('selectedOrganizations', JSON.stringify(newSelectedOrgs));
+    } catch (error) {
+      console.error('Error saving organization selection to localStorage:', error);
     }
   };
 
   const toggleAllOrgs = (checked: boolean) => {
+    let newSelectedOrgs: string[];
     if (checked) {
-      const accessibleOrgs = accessStatuses
+      newSelectedOrgs = accessStatuses
         .filter(status => status.hasAccess)
         .map(status => status.orgLogin);
-      setSelectedOrgs(accessibleOrgs);
     } else {
-      setSelectedOrgs([]);
+      newSelectedOrgs = [];
+    }
+    // Update state
+    setSelectedOrgs(newSelectedOrgs);
+    // Save to localStorage
+    try {
+      localStorage.setItem('selectedOrganizations', JSON.stringify(newSelectedOrgs));
+    } catch (error) {
+      console.error('Error saving organization selection to localStorage:', error);
     }
   };
 
