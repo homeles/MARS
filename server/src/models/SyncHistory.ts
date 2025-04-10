@@ -42,7 +42,7 @@ const SyncHistorySchema: Schema = new Schema({
 }, { timestamps: true });
 
 // Add index for efficient queries
-SyncHistorySchema.index({ syncId: 1 });
+// No need to index syncId here since it's already marked as unique in the schema definition
 SyncHistorySchema.index({ enterpriseName: 1 });
 SyncHistorySchema.index({ status: 1 });
 

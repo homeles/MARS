@@ -9,8 +9,10 @@ import { WebSocketServer } from 'ws';
 import { useServer } from 'graphql-ws/lib/use/ws';
 import { typeDefs } from './schema/typeDefs';
 import { resolvers } from './schema/resolvers';
+import { syncHistoryResolvers, userPreferenceResolvers } from './utils/resolverUtils';
 import { PubSub } from 'graphql-subscriptions';
 import dotenv from 'dotenv';
+import { merge } from 'lodash';
 import mongoose from 'mongoose';
 
 dotenv.config();
@@ -56,8 +58,24 @@ async function startServer() {
     throw error;
   }
 
-  // Create schema
-  const schema = makeExecutableSchema({ typeDefs, resolvers });
+  // Create schema with proper merging of all resolvers
+  // Merge all resolver objects together to ensure subscriptions work correctly
+  const mergedResolvers = merge(
+    {},
+    resolvers,
+    { 
+      Query: { ...userPreferenceResolvers.Query, ...syncHistoryResolvers.Query },
+      Mutation: { ...userPreferenceResolvers.Mutation },
+      Subscription: { 
+        ...syncHistoryResolvers.Subscription,
+      }
+    }
+  );
+  
+  const schema = makeExecutableSchema({ 
+    typeDefs, 
+    resolvers: mergedResolvers
+  });
 
   // Set up WebSocket server
   const wsServer = new WebSocketServer({

@@ -3,6 +3,8 @@ import { useQuery, useMutation, useSubscription } from '@apollo/client';
 import { logger } from '../utils/logger';
 import { gql } from '@apollo/client';
 import SyncProgress from '../components/SyncProgress';
+// Using dynamic import for SyncHistoryTable to avoid module resolution issues
+const SyncHistoryTable = React.lazy(() => import('../components/SyncHistoryTable'));
 
 const SYNC_MIGRATIONS = gql`
   mutation SyncMigrations($enterpriseName: String!, $token: String!, $selectedOrganizations: [String!]) {
@@ -57,6 +59,50 @@ const GET_ORG_ACCESS_STATUS = gql`
   }
 `;
 
+const GET_SYNC_HISTORIES = gql`
+  query GetSyncHistories($enterpriseName: String!, $limit: Int, $offset: Int) {
+    syncHistories(enterpriseName: $enterpriseName, limit: $limit, offset: $offset) {
+      syncId
+      enterpriseName
+      startTime
+      endTime
+      status
+      completedOrganizations
+      totalOrganizations
+      organizations {
+        login
+        totalMigrations
+        totalPages
+        elapsedTimeMs
+        errors
+        latestMigrationDate
+      }
+    }
+  }
+`;
+
+const SYNC_HISTORY_SUBSCRIPTION = gql`
+  subscription OnSyncHistoryUpdated($enterpriseName: String!, $syncId: String) {
+    syncHistoryUpdated(enterpriseName: $enterpriseName, syncId: $syncId) {
+      syncId
+      enterpriseName
+      startTime
+      endTime
+      status
+      completedOrganizations
+      totalOrganizations
+      organizations {
+        login
+        totalMigrations
+        totalPages
+        elapsedTimeMs
+        errors
+        latestMigrationDate
+      }
+    }
+  }
+`;
+
 const SYNC_PROGRESS_SUBSCRIPTION = gql`
   subscription OnSyncProgressUpdated($enterpriseName: String!) {
     syncProgressUpdated(enterpriseName: $enterpriseName) {
@@ -89,6 +135,7 @@ export const Settings: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<Error | null>(null);
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>([]);
+  const [syncHistoryLimit] = useState<number>(10); // Number of records to fetch
   const [syncProgress, setSyncProgress] = useState<Array<{
     organizationName: string;
     totalPages: number;
@@ -104,6 +151,34 @@ export const Settings: React.FC = () => {
   const { data: organizationsData, loading: orgsLoading, error: orgsError } = useQuery(GET_ENTERPRISE_ORGS, {
     variables: { enterpriseName: selectedEnterprise },
     skip: !selectedEnterprise || !accessToken
+  });
+
+  // Query for sync histories
+  const { 
+    data: syncHistoriesData, 
+    loading: syncHistoriesLoading, 
+    error: syncHistoriesError,
+    refetch: refetchSyncHistories 
+  } = useQuery(GET_SYNC_HISTORIES, {
+    variables: { 
+      enterpriseName: selectedEnterprise,
+      limit: syncHistoryLimit,
+      offset: 0
+    },
+    skip: !selectedEnterprise,
+    fetchPolicy: 'network-only'
+  });
+
+  // Subscribe to sync history updates
+  useSubscription(SYNC_HISTORY_SUBSCRIPTION, {
+    variables: { 
+      enterpriseName: selectedEnterprise
+    },
+    skip: !selectedEnterprise,
+    onData: () => {
+      // Refetch sync histories when a new sync history is updated
+      refetchSyncHistories();
+    }
   });
 
   const organizations = organizationsData?.enterprise?.organizations?.nodes?.map((node: { login: string }) => node.login) || [];
@@ -380,6 +455,27 @@ export const Settings: React.FC = () => {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Add Sync History Section */}
+      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Migration Sync History</h2>
+          <button 
+            onClick={() => refetchSyncHistories()} 
+            className="px-3 py-1 text-sm rounded-md text-white bg-blue-600 hover:bg-blue-700"
+          >
+            Refresh
+          </button>
+        </div>
+        
+        <div className="mt-4">
+          <SyncHistoryTable 
+            syncHistories={syncHistoriesData?.syncHistories || []}
+            loading={syncHistoriesLoading}
+            error={syncHistoriesError}
+          />
         </div>
       </div>
 

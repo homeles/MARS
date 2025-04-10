@@ -714,6 +714,10 @@ export const resolvers = {
           selectedOrgs: organizations.map((o: { login: string }) => o.login)
         }, syncId);
         
+        // Create a sync history record in the database
+        const orgLogins = organizations.map((org: { login: string }) => org.login);
+        await createSyncHistory(enterpriseName, syncId, orgLogins);
+        
         // Process each organization
         for (const org of organizations) {
           const orgIndex = progress.findIndex(p => p.organizationName === org.login);
@@ -924,6 +928,14 @@ export const resolvers = {
             progress[orgIndex].isCompleted = true;
             logger.syncComplete('SyncMigrations', org.login, totalMigrations, syncId);
             
+            // Update the sync history record for this organization
+            await updateOrgSyncHistory(syncId, org.login, {
+              totalMigrations: totalMigrations,
+              totalPages: currentPage - 1,
+              latestMigrationDate: new Date(),
+              elapsedTimeMs: progress[orgIndex].elapsedTimeMs || 0
+            });
+            
             pubsub.publish(SYNC_PROGRESS_UPDATED, { 
               syncProgressUpdated: progress,
               enterpriseName 
@@ -946,6 +958,10 @@ export const resolvers = {
         }
 
         console.log(`[Sync] Completed full sync for enterprise: ${enterpriseName}`);
+        
+        // Mark the sync history as completed
+        await completeSyncHistory(syncId, 'completed');
+        
         return { 
           success: true, 
           message: 'Sync completed successfully',
@@ -1063,10 +1079,12 @@ export const resolvers = {
   Subscription: {
     syncProgressUpdated: {
       subscribe: withFilter(
-        // Use a function wrapper that provides the asyncIterator without TypeScript complaining
-        function() {
+        // Explicitly return the asyncIterator with a proper function declaration
+        function syncProgressIterator() {
+          // Using ts-ignore directive to suppress the TypeScript error
           // @ts-ignore - asyncIterator exists at runtime but TypeScript doesn't know about it
-          return pubsub.asyncIterator([SYNC_PROGRESS_UPDATED]);
+          const iterator = pubsub.asyncIterator([SYNC_PROGRESS_UPDATED]);
+          return iterator; // Ensure we're returning the iterator directly
         },
         function(payload: any, args: { enterpriseName: string } | undefined): boolean {
           if (!payload || !args) return false;

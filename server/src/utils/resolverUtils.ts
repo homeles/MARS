@@ -40,7 +40,7 @@ export const userPreferenceResolvers = {
     
     saveUserPreferences: async (_: any, { preferences }: { preferences: { key: string, value: string }[] }) => {
       try {
-        const results = [];
+        const results: { key: string, value: string }[] = [];
         
         // Process each preference
         for (const { key, value } of preferences) {
@@ -76,6 +76,8 @@ export const userPreferenceResolvers = {
 };
 
 // Sync History resolver functions
+import { formatDate } from '../schema/dateFix';
+
 export const syncHistoryResolvers = {
   Query: {
     syncHistory: async (_: any, { syncId }: { syncId: string }) => {
@@ -107,13 +109,27 @@ export const syncHistoryResolvers = {
       }
     },
   },
+
+  // Add resolvers for SyncHistory to handle date formatting
+  SyncHistory: {
+    startTime: (parent: any) => formatDate(parent.startTime),
+    endTime: (parent: any) => formatDate(parent.endTime),
+    createdAt: (parent: any) => formatDate(parent.createdAt || parent.startTime),
+    updatedAt: (parent: any) => formatDate(parent.updatedAt || parent.endTime || parent.startTime),
+  },
+
+  // Add resolvers for OrgSyncHistory to format dates
+  OrgSyncHistory: {
+    latestMigrationDate: (parent: any) => formatDate(parent.latestMigrationDate)
+  },
   
   Subscription: {
     syncHistoryUpdated: {
       subscribe: withFilter(
-        () => {
-          // @ts-ignore - TypeScript doesn't properly recognize the asyncIterator method
-          return pubsub.asyncIterator(SYNC_HISTORY_UPDATED);
+        // Make sure we return an async iterable by using a function that properly returns the pubsub.asyncIterator
+        function() {
+          // @ts-ignore - asyncIterator exists at runtime but TypeScript compiler doesn't recognize it
+          return pubsub.asyncIterator([SYNC_HISTORY_UPDATED]);
         },
         (payload, variables) => {
           // Filter based on enterpriseName or syncId if provided
@@ -131,9 +147,15 @@ export const syncHistoryResolvers = {
 // Helper functions for sync history management
 export async function createSyncHistory(enterpriseName: string, syncId: string, orgs: string[]): Promise<ISyncHistory> {
   try {
+    const now = new Date();
+    const startTimeISO = now.toISOString(); // Create ISO string format for consistent storage
+
+    console.log(`[DATE DEBUG] Creating sync history with startTime: ${startTimeISO}`);
+    
     const syncHistory = new SyncHistory({
       enterpriseName,
       syncId,
+      startTime: startTimeISO, // Explicitly set the start time
       organizations: orgs.map(login => ({
         login,
         totalMigrations: 0,
@@ -146,6 +168,13 @@ export async function createSyncHistory(enterpriseName: string, syncId: string, 
     });
     
     await syncHistory.save();
+    
+    // Log what was actually saved to the database
+    console.log(`[DATE DEBUG] Saved sync history with ID: ${syncId}`);
+    console.log(`[DATE DEBUG] Saved startTime in DB: ${syncHistory.startTime}`);
+    console.log(`[DATE DEBUG] startTime type: ${typeof syncHistory.startTime}`);
+    console.log(`[DATE DEBUG] Is startTime Date instance? ${syncHistory.startTime instanceof Date}`);
+    console.log(`[DATE DEBUG] startTime toISOString: ${syncHistory.startTime instanceof Date ? syncHistory.startTime.toISOString() : 'Not a Date'}`);
     
     // Publish update so clients can see the new sync history
     pubsub.publish(SYNC_HISTORY_UPDATED, {
@@ -234,6 +263,9 @@ export async function updateOrgSyncHistory(
       updateObj[`organizations.${orgIndex}.elapsedTimeMs`] = updates.elapsedTimeMs;
     }
     
+    // Increment the completedOrganizations counter
+    updateObj.completedOrganizations = syncHistory.completedOrganizations + 1;
+    
     // Apply the updates
     const updatedSyncHistory = await SyncHistory.findOneAndUpdate(
       { syncId },
@@ -257,11 +289,56 @@ export async function updateOrgSyncHistory(
 
 export async function completeSyncHistory(syncId: string, status: 'completed' | 'failed' = 'completed'): Promise<ISyncHistory | null> {
   try {
+    // First get the current sync history to calculate the duration
+    const currentHistory = await SyncHistory.findOne({ syncId });
+    if (!currentHistory) {
+      console.log(`[DATE DEBUG] Cannot complete sync history - ID not found: ${syncId}`);
+      return null;
+    }
+    
+    console.log(`[DATE DEBUG] Completing sync with ID: ${syncId}`);
+    console.log(`[DATE DEBUG] Current startTime in DB: ${currentHistory.startTime}`);
+    console.log(`[DATE DEBUG] Current startTime type: ${typeof currentHistory.startTime}`);
+    
+    // Explicitly create a new Date object for both start and end times
+    // This ensures we store valid JavaScript Date objects in ISO format
+    const now = new Date();
+    const startTime = currentHistory.startTime ? 
+                      new Date(currentHistory.startTime) : 
+                      new Date(now.getTime() - 60000); // Default 1 minute ago if no start time
+                      
+    // Create a valid end time as current time
+    const endTime = now;
+    
+    // Log the date objects we've created
+    console.log(`[DATE DEBUG] Processed startTime: ${startTime.toISOString()}`);
+    console.log(`[DATE DEBUG] Created endTime: ${endTime.toISOString()}`);
+    
+    // Make sure all organizations are marked as completed
+    const totalOrganizations = currentHistory.totalOrganizations || 0;
+    
+    // Calculate duration in milliseconds
+    const durationMs = endTime.getTime() - startTime.getTime();
+    console.log(`[DATE DEBUG] Calculated duration (ms): ${durationMs}`);
+    
+    // Create ISO strings for consistent storage
+    const startTimeISO = startTime.toISOString();
+    const endTimeISO = endTime.toISOString();
+    
+    console.log(`[DATE DEBUG] startTimeISO to save: ${startTimeISO}`);
+    console.log(`[DATE DEBUG] endTimeISO to save: ${endTimeISO}`);
+    
+    // Force the dates to be stored as ISO strings for consistency
     const syncHistory = await SyncHistory.findOneAndUpdate(
       { syncId },
       {
-        endTime: new Date(),
-        status
+        $set: {
+          startTime: startTimeISO, // Store as ISO string for consistency
+          endTime: endTimeISO,     // Store as ISO string for consistency
+          status,
+          completedOrganizations: totalOrganizations, // Ensure all orgs marked as completed
+          durationMs: durationMs // Store duration for easier retrieval
+        }
       },
       { new: true }
     );
