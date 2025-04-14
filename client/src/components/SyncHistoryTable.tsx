@@ -129,8 +129,18 @@ const SyncHistoryTable: React.FC<SyncHistoryTableProps> = ({ syncHistories = [],
     }
   };
 
+  // Helper function to format organization names for display
+  const formatOrganizationDisplay = (organizations: any[]): string => {
+    if (!organizations || organizations.length === 0) return 'None';
+    
+    const orgNames = organizations.map(org => org.name || org.login);
+    if (orgNames.length <= 3) return orgNames.join(', ');
+    
+    return `${orgNames.slice(0, 3).join(', ')} +${orgNames.length - 3} more`;
+  };
+
   return (
-    <div className="overflow-x-auto shadow-md rounded-lg">
+    <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
         <thead className="bg-gray-100 dark:bg-gray-700">
           <tr>
@@ -156,6 +166,19 @@ const SyncHistoryTable: React.FC<SyncHistoryTableProps> = ({ syncHistories = [],
         </thead>
         <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-800 dark:divide-gray-600">
           {syncHistories.map((item: SyncHistory) => {
+            // Get formatted org display and full org list for tooltip
+            const orgDisplay = item.organizations && Array.isArray(item.organizations) ?
+              formatOrganizationDisplay(item.organizations) :
+              item.organizationNames && Array.isArray(item.organizationNames) ?
+              formatOrganizationDisplay(item.organizationNames.map(name => ({ login: name }))) :
+              item.organizationsCount > 0 ? `${item.organizationsCount} orgs` :
+              item.status === 'in-progress' ? 'In progress' : 'None';
+
+            const fullOrgList = item.organizations && Array.isArray(item.organizations) ?
+              item.organizations.map(org => org.name || org.login).join('\n') :
+              item.organizationNames && Array.isArray(item.organizationNames) ?
+              item.organizationNames.join('\n') : '';
+
             return (
               <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
@@ -164,14 +187,11 @@ const SyncHistoryTable: React.FC<SyncHistoryTableProps> = ({ syncHistories = [],
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
                   {item.enterpriseName || 'N/A'}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
-                  {/* Show organization names if available */}
-                  {item.organizations && Array.isArray(item.organizations) && item.organizations.length > 0 ? 
-                    item.organizations.map(org => org.name || org.login).join(', ') : 
-                    item.organizationNames && Array.isArray(item.organizationNames) && item.organizationNames.length > 0 ?
-                    item.organizationNames.join(', ') :
-                    item.organizationsCount > 0 ? `${item.organizationsCount} orgs` :
-                    item.status === 'in-progress' ? 'In progress' : 'None'}
+                <td 
+                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 cursor-help"
+                  title={fullOrgList}
+                >
+                  {orgDisplay}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
                   {/* Show the number of migrations that were synced */}
