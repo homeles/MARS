@@ -14,6 +14,7 @@ import { PubSub } from 'graphql-subscriptions';
 import dotenv from 'dotenv';
 import { merge } from 'lodash';
 import mongoose from 'mongoose';
+import { initializeCronJobs } from './utils/cronManager';
 
 dotenv.config();
 
@@ -53,6 +54,10 @@ async function startServer() {
   try {
     await mongoose.connect(mongoUri);
     logger.info('Connected to MongoDB');
+    
+    // Initialize cron jobs after MongoDB connection is established
+    await initializeCronJobs();
+    logger.info('Initialized cron jobs');
   } catch (error) {
     logger.error('MongoDB connection error:', error);
     throw error;

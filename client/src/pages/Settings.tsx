@@ -119,6 +119,28 @@ const SYNC_PROGRESS_SUBSCRIPTION = gql`
   }
 `;
 
+const GET_CRON_CONFIG = gql`
+  query GetCronConfig($enterpriseName: String!) {
+    cronConfig(enterpriseName: $enterpriseName) {
+      schedule
+      enabled
+      lastRun
+      nextRun
+    }
+  }
+`;
+
+const UPDATE_CRON_CONFIG = gql`
+  mutation UpdateCronConfig($enterpriseName: String!, $schedule: String!, $enabled: Boolean!) {
+    updateCronConfig(enterpriseName: $enterpriseName, schedule: $schedule, enabled: $enabled) {
+      schedule
+      enabled
+      lastRun
+      nextRun
+    }
+  }
+`;
+
 interface AccessStatus {
   orgLogin: string;
   hasAccess: boolean;
@@ -153,13 +175,33 @@ export const Settings: React.FC = () => {
     isCompleted: boolean;
     error?: string;
   }>>([]);
-  
+  const [cronSchedule, setCronSchedule] = useState<string>('0 0 * * *'); // Default to daily at midnight
+  const [cronEnabled, setCronEnabled] = useState<boolean>(false);
+
   const [syncMigrations] = useMutation(SYNC_MIGRATIONS);
   const [checkOrgAccessMutation] = useMutation(CHECK_ORG_ACCESS);
+  const [updateCronConfig, { loading: updatingCron }] = useMutation(UPDATE_CRON_CONFIG, {
+    onCompleted: () => {
+      // Refetch cron config after update
+      refetchCronConfig();
+    }
+  });
 
   const { data: organizationsData, loading: orgsLoading, error: orgsError } = useQuery(GET_ENTERPRISE_ORGS, {
     variables: { enterpriseName: selectedEnterprise },
     skip: !selectedEnterprise || !accessToken
+  });
+
+  // Add CronConfig query
+  const { data: cronConfigData, refetch: refetchCronConfig } = useQuery(GET_CRON_CONFIG, {
+    variables: { enterpriseName: selectedEnterprise },
+    skip: !selectedEnterprise,
+    onCompleted: (data) => {
+      if (data?.cronConfig) {
+        setCronSchedule(data.cronConfig.schedule);
+        setCronEnabled(data.cronConfig.enabled);
+      }
+    }
   });
 
   // Query for sync histories
@@ -375,6 +417,20 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const handleCronUpdate = async () => {
+    try {
+      await updateCronConfig({
+        variables: {
+          enterpriseName: selectedEnterprise,
+          schedule: cronSchedule,
+          enabled: cronEnabled
+        }
+      });
+    } catch (error) {
+      console.error('Error updating cron config:', error);
+    }
+  };
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Settings</h1>
@@ -510,6 +566,71 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Add Cron Configuration Section */}
+      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Automated Sync Configuration</h2>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Cron Schedule
+            </label>
+            <div className="mt-1">
+              <input
+                type="text"
+                value={cronSchedule}
+                onChange={(e) => setCronSchedule(e.target.value)}
+                placeholder="0 0 * * *"
+                className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-60 sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md font-mono"
+              />
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Format: minute hour day month weekday (e.g., "0 0 * * *" for daily at midnight)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="cronEnabled"
+              checked={cronEnabled}
+              onChange={(e) => setCronEnabled(e.target.checked)}
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+            />
+            <label htmlFor="cronEnabled" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
+              Enable automated sync
+            </label>
+          </div>
+
+          {cronConfigData?.cronConfig && (
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {cronConfigData.cronConfig.lastRun && (
+                <p>Last run: {new Date(cronConfigData.cronConfig.lastRun).toLocaleString()}</p>
+              )}
+              {cronConfigData.cronConfig.nextRun && (
+                <p>Next run: {new Date(cronConfigData.cronConfig.nextRun).toLocaleString()}</p>
+              )}
+            </div>
+          )}
+
+          <div className="pt-4">
+            <button
+              onClick={handleCronUpdate}
+              disabled={!selectedEnterprise || updatingCron}
+              className={`px-4 py-2 rounded-md text-white ${
+                selectedEnterprise
+                  ? 'bg-primary-600 hover:bg-primary-700'
+                  : 'bg-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {updatingCron ? 'Updating Cron...' : 'Save Cron Configuration'}
+            </button>
           </div>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { withFilter } from 'graphql-subscriptions';
 import mongoose from 'mongoose';
 import axios from 'axios';
 import { MigrationState, RepositoryMigration, OrgAccessStatus, IRepositoryMigration } from '../models/RepositoryMigration';
+import { CronConfig } from '../models/CronConfig';
 import { pubsub, SYNC_PROGRESS_UPDATED, SYNC_HISTORY_UPDATED } from '../index';
 import { logger } from '../utils/logger';
 import { UserPreference } from '../models/UserPreference';
@@ -14,6 +15,7 @@ import {
   updateOrgSyncHistory, 
   completeSyncHistory 
 } from '../utils/resolverUtils';
+import { stopCronJob, scheduleCronJob, calculateNextRun } from '../utils/cronManager';
 
 // GraphQL pagination and order types
 interface PageInfo {
@@ -655,6 +657,15 @@ export const resolvers = {
     orgAccessStatus: async (_: unknown, { enterpriseName }: { enterpriseName: string }) => {
       return await OrgAccessStatus.find({ enterpriseName });
     },
+
+    cronConfig: async (_: unknown, { enterpriseName }: { enterpriseName: string }) => {
+      try {
+        return await CronConfig.findOne({ enterpriseName });
+      } catch (error) {
+        console.error('Error fetching cron config:', error);
+        throw new Error('Failed to fetch cron configuration');
+      }
+    }
   },
 
   Mutation: {
@@ -1073,7 +1084,51 @@ export const resolvers = {
       }
 
       return results;
-    }
+    },
+
+    updateCronConfig: async (_: unknown, { 
+      enterpriseName, 
+      schedule, 
+      enabled 
+    }: { 
+      enterpriseName: string; 
+      schedule: string; 
+      enabled: boolean; 
+    }) => {
+      try {
+        logger.info('CronManager', `Updating cron config for ${enterpriseName}`, { schedule, enabled });
+
+        // Stop existing cron job if any
+        if (!enabled) {
+          stopCronJob(enterpriseName);
+        }
+
+        // Save or update cron configuration
+        const config = await CronConfig.findOneAndUpdate(
+          { enterpriseName },
+          { 
+            schedule, 
+            enabled,
+            nextRun: enabled ? calculateNextRun(schedule) : null
+          },
+          { 
+            upsert: true, 
+            new: true,
+            runValidators: true
+          }
+        );
+
+        // Schedule new job if enabled
+        if (enabled) {
+          await scheduleCronJob(enterpriseName, schedule);
+        }
+
+        return config;
+      } catch (error) {
+        logger.error('CronManager', `Error updating cron config for ${enterpriseName}`, { error });
+        throw new Error('Failed to update cron configuration');
+      }
+    },
   },
 
   Subscription: {

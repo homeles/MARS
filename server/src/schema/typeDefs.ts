@@ -108,6 +108,11 @@ export const typeDefs = gql`
     processingRate: Float
   }
 
+  type UserPreference {
+    key: String!
+    value: String!
+  }
+
   type OrgSyncHistory {
     login: String!
     totalMigrations: Int!
@@ -118,7 +123,6 @@ export const typeDefs = gql`
   }
 
   type SyncHistory {
-    id: ID!
     syncId: String!
     enterpriseName: String!
     startTime: String!
@@ -127,13 +131,16 @@ export const typeDefs = gql`
     status: String!
     completedOrganizations: Int!
     totalOrganizations: Int!
-    createdAt: String!
-    updatedAt: String!
   }
 
-  type UserPreference {
-    key: String!
-    value: String!
+  type CronConfig {
+    enterpriseName: String!
+    schedule: String!
+    enabled: Boolean!
+    lastRun: String
+    nextRun: String
+    createdAt: String!
+    updatedAt: String!
   }
 
   type Query {
@@ -157,6 +164,7 @@ export const typeDefs = gql`
     syncHistory(syncId: String): SyncHistory
     syncHistories(enterpriseName: String!, limit: Int, offset: Int): [SyncHistory!]!
     userPreferences(keys: [String!]): [UserPreference!]!
+    cronConfig(enterpriseName: String!): CronConfig
   }
 
   type EnterpriseStats {
@@ -180,6 +188,7 @@ export const typeDefs = gql`
     saveUserPreference(key: String!, value: String!): UserPreference!
     saveUserPreferences(preferences: [UserPreferenceInput!]!): [UserPreference!]!
     deleteUserPreference(key: String!): Boolean!
+    updateCronConfig(enterpriseName: String!, schedule: String!, enabled: Boolean!): CronConfig
   }
 
   input UserPreferenceInput {
