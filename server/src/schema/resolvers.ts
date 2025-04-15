@@ -660,7 +660,16 @@ export const resolvers = {
 
     cronConfig: async (_: unknown, { enterpriseName }: { enterpriseName: string }) => {
       try {
-        return await CronConfig.findOne({ enterpriseName });
+        const config = await CronConfig.findOne({ enterpriseName });
+        if (!config) return null;
+        
+        return {
+          ...config.toObject(),
+          lastRun: config.lastRun?.toISOString(),
+          nextRun: config.nextRun?.toISOString(),
+          createdAt: config.createdAt.toISOString(),
+          updatedAt: config.updatedAt.toISOString()
+        };
       } catch (error) {
         console.error('Error fetching cron config:', error);
         throw new Error('Failed to fetch cron configuration');
@@ -1103,13 +1112,17 @@ export const resolvers = {
           stopCronJob(enterpriseName);
         }
 
+        // Calculate next run time if enabled
+        const nextRunDate = enabled ? calculateNextRun(schedule) : null;
+
         // Save or update cron configuration
         const config = await CronConfig.findOneAndUpdate(
           { enterpriseName },
           { 
             schedule, 
             enabled,
-            nextRun: enabled ? calculateNextRun(schedule) : null
+            nextRun: nextRunDate,
+            lastRun: enabled ? new Date() : undefined
           },
           { 
             upsert: true, 
@@ -1123,7 +1136,14 @@ export const resolvers = {
           await scheduleCronJob(enterpriseName, schedule);
         }
 
-        return config;
+        // Format dates before returning
+        return {
+          ...config.toObject(),
+          lastRun: config.lastRun?.toISOString(),
+          nextRun: config.nextRun?.toISOString(),
+          createdAt: config.createdAt.toISOString(),
+          updatedAt: config.updatedAt.toISOString()
+        };
       } catch (error) {
         logger.error('CronManager', `Error updating cron config for ${enterpriseName}`, { error });
         throw new Error('Failed to update cron configuration');
