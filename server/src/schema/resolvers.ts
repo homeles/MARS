@@ -424,6 +424,25 @@ export const resolvers = {
           ];
         }
 
+        // Get total count for pagination info
+        const totalCount = await RepositoryMigration.countDocuments(query);
+        
+        // Handle pagination
+        let limit = pageSize;
+        let skip = 0;
+        
+        // If pageSize is -1, return all records
+        if (pageSize === -1) {
+          limit = totalCount;
+          skip = 0;
+        } else {
+          // Calculate normal pagination
+          limit = Math.max(1, Math.min(1000, pageSize));
+          const totalPages = Math.ceil(totalCount / limit);
+          const currentPage = Math.max(1, Math.min(page, totalPages));
+          skip = (currentPage - 1) * limit;
+        }
+
         // Sort configuration
         const sortDirection = orderBy?.direction === 'DESC' ? -1 : 1;
         let sortField = 'createdAt';
@@ -449,15 +468,6 @@ export const resolvers = {
           default:
             sortField = 'createdAt';
         }
-        
-        // Get total count for pagination info
-        const totalCount = await RepositoryMigration.countDocuments(query);
-        
-        // Calculate pagination
-        const limit = Math.max(1, Math.min(100, pageSize)); // Ensure pageSize is between 1 and 100
-        const totalPages = Math.ceil(totalCount / limit);
-        const currentPage = Math.max(1, Math.min(page, totalPages)); // Ensure page is valid
-        const skip = (currentPage - 1) * limit;
 
         // Execute query with pagination and case-insensitive sorting
         const migrations = await RepositoryMigration.find(query)
@@ -468,16 +478,29 @@ export const resolvers = {
           .exec();
 
         // Calculate pagination metadata
-        const hasNextPage = currentPage < totalPages;
-        const hasPreviousPage = currentPage > 1;
+        const hasNextPage = skip + limit < totalCount;
+        const hasPreviousPage = skip > 0;
 
-        // Get metrics for all states
-        const metrics = {
-          totalCount,
-          completedCount: await RepositoryMigration.countDocuments({ ...query, state: 'SUCCEEDED' }),
-          failedCount: await RepositoryMigration.countDocuments({ ...query, state: { $in: ['FAILED', 'FAILED_VALIDATION'] } }),
-          inProgressCount: await RepositoryMigration.countDocuments({ ...query, state: 'IN_PROGRESS' })
-        };
+        // Get metrics for all states - use more efficient aggregation
+        const [allCount, completedCount, failedCount, inProgressCount] = await Promise.all([
+          RepositoryMigration.countDocuments(query),
+          RepositoryMigration.countDocuments({ ...query, state: MigrationState.SUCCEEDED }),
+          RepositoryMigration.countDocuments({ 
+            ...query, 
+            state: { $in: [MigrationState.FAILED, MigrationState.FAILED_VALIDATION] } 
+          }),
+          RepositoryMigration.countDocuments({ 
+            ...query, 
+            state: { 
+              $in: [
+                MigrationState.IN_PROGRESS, 
+                MigrationState.NOT_STARTED, 
+                MigrationState.PENDING_VALIDATION, 
+                MigrationState.QUEUED
+              ] 
+            } 
+          })
+        ]);
 
         return {
           nodes: migrations.map(migration => ({
@@ -488,10 +511,13 @@ export const resolvers = {
           pageInfo: {
             hasPreviousPage,
             hasNextPage,
-            totalPages,
-            currentPage
+            totalPages: Math.ceil(totalCount / limit),
+            currentPage: Math.floor(skip / limit) + 1
           },
-          ...metrics
+          totalCount: allCount,
+          completedCount,
+          failedCount,
+          inProgressCount
         };
       } catch (error) {
         console.error('[ERROR] Error in allMigrations resolver:', error);

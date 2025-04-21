@@ -2,20 +2,19 @@ import React from 'react';
 
 // Basic structure for SyncHistoryTable component
 interface SyncHistory {
-  id: string;
+  syncId: string;
   startTime: string;
   endTime?: string;
   status: string;
   enterpriseName: string;
-  organizationsCount: number;
-  migrationsCount: number;
-  error?: string;
-  // Additional properties used in rendering
-  organizations?: Array<{name?: string; login?: string; totalMigrations?: number}>;
-  organizationNames?: string[];
-  migrations?: Array<any>;
-  repositoryMigrations?: Array<any>;
-  totalMigrations?: number;
+  organizations: Array<{
+    login: string;
+    totalMigrations: number;
+    totalPages: number;
+    elapsedTimeMs: number;
+  }>;
+  completedOrganizations: number;
+  totalOrganizations: number;
 }
 
 interface SyncHistoryTableProps {
@@ -167,20 +166,11 @@ const SyncHistoryTable: React.FC<SyncHistoryTableProps> = ({ syncHistories = [],
         <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-800 dark:divide-gray-600">
           {syncHistories.map((item: SyncHistory) => {
             // Get formatted org display and full org list for tooltip
-            const orgDisplay = item.organizations && Array.isArray(item.organizations) ?
-              formatOrganizationDisplay(item.organizations) :
-              item.organizationNames && Array.isArray(item.organizationNames) ?
-              formatOrganizationDisplay(item.organizationNames.map(name => ({ login: name }))) :
-              item.organizationsCount > 0 ? `${item.organizationsCount} orgs` :
-              item.status === 'in-progress' ? 'In progress' : 'None';
-
-            const fullOrgList = item.organizations && Array.isArray(item.organizations) ?
-              item.organizations.map(org => org.name || org.login).join('\n') :
-              item.organizationNames && Array.isArray(item.organizationNames) ?
-              item.organizationNames.join('\n') : '';
+            const orgDisplay = formatOrganizationDisplay(item.organizations);
+            const fullOrgList = item.organizations.map(org => org.login).join('\n');
 
             return (
-              <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+              <tr key={item.syncId} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
                   {formatDate(item.startTime)}
                 </td>
@@ -196,36 +186,13 @@ const SyncHistoryTable: React.FC<SyncHistoryTableProps> = ({ syncHistories = [],
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
                   {/* Show the number of migrations that were synced */}
                   {(() => {
-                    // According to the SyncHistory model, migrations data is stored within each organization
-                    if (item.organizations && Array.isArray(item.organizations) && item.organizations.length > 0) {
-                      // Calculate the sum of all totalMigrations across all organizations
-                      const totalMigrations = item.organizations.reduce((sum, org) => 
-                        sum + (org.totalMigrations || 0), 0);
-                      
-                      return totalMigrations > 0 ? totalMigrations : 'None';
-                    } 
-                    
-                    // Fallback to other possible data sources
-                    if (item.migrations && Array.isArray(item.migrations) && item.migrations.length > 0) {
-                      return item.migrations.length;
-                    } 
-                    if (item.repositoryMigrations && Array.isArray(item.repositoryMigrations) && item.repositoryMigrations.length > 0) {
-                      return item.repositoryMigrations.length;
-                    }
-                    if (typeof item.totalMigrations === 'number' && item.totalMigrations > 0) {
-                      return item.totalMigrations;
-                    }
-                    if (typeof item.migrationsCount === 'number' && item.migrationsCount > 0) {
-                      return item.migrationsCount;
-                    }
-                    
-                    // For special states
                     if (item.status === 'in-progress') {
                       return 'In progress';
                     }
                     
-                    // Default case - no migrations or data not available
-                    return 'None';
+                    const totalMigrations = item.organizations.reduce((sum, org) => 
+                      sum + (org.totalMigrations || 0), 0);
+                    return totalMigrations > 0 ? totalMigrations : 'None';
                   })()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">

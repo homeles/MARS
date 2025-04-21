@@ -151,8 +151,8 @@ interface LogData {
 }
 
 export const Settings: React.FC = () => {
-  const [selectedEnterprise] = useState<string>(process.env.GITHUB_ENTERPRISE_NAME || '');
-  const [accessToken] = useState<string>(process.env.GITHUB_TOKEN || '');
+  const [selectedEnterprise] = useState<string>(import.meta.env.VITE_GITHUB_ENTERPRISE_NAME || '');
+  const [accessToken] = useState<string>(import.meta.env.VITE_GITHUB_TOKEN || '');
   const [checkingAccess, setCheckingAccess] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<Error | null>(null);
@@ -366,8 +366,11 @@ export const Settings: React.FC = () => {
     setSyncError(null);
     
     try {
-      // Initialize progress for selected organizations - this serves as the initial state
-      // before subscription updates start flowing in
+      // Save enterprise name to localStorage
+      localStorage.setItem('selectedEnterprise', selectedEnterprise);
+      
+      // Initialize progress for selected organizations
+      // ...existing code...
       const initialProgress = selectedOrgs.length > 0 
         ? selectedOrgs.map(org => ({
             organizationName: org,

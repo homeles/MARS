@@ -1,33 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
-import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-} from 'chart.js';
 import StatsCard from '../components/StatsCard';
 import MigrationStatusBadge from '../components/MigrationStatusBadge';
 import { MigrationState, Migration } from '../types';
 import { logger } from '../utils/logger';
 import debounce from 'lodash.debounce';
-
-// Register ChartJS components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
 
 // Get organizations query
 const GET_ORGANIZATIONS = gql`
@@ -42,6 +20,7 @@ const GET_ORGANIZATIONS = gql`
   }
 `;
 
+// Main migrations query
 const GET_MIGRATIONS = gql`
   query GetMigrations($state: MigrationState, $pageSize: Int, $page: Int, $orderBy: MigrationOrder, $search: String, $organizationName: String) {
     allMigrations(
@@ -217,19 +196,6 @@ export const Dashboard: React.FC = () => {
     succeeded: data?.allMigrations?.completedCount || 0,
     failed: data?.allMigrations?.failedCount || 0,
     inProgress: data?.allMigrations?.inProgressCount || 0
-  };
-
-  // Prepare chart data
-  const chartData = {
-    labels: ['7 days ago', '6 days ago', '5 days ago', '4 days ago', '3 days ago', '2 days ago', 'Today'],
-    datasets: [
-      {
-        label: 'Completed Migrations',
-        data: [12, 19, 15, 25, 22, 30, stats.succeeded],
-        borderColor: 'rgb(75, 192, 192)',
-        tension: 0.1,
-      },
-    ],
   };
 
   const renderRow = (migration: Migration) => {
@@ -448,35 +414,6 @@ export const Dashboard: React.FC = () => {
           title="In Progress"
           value={stats.inProgress}
         />
-      </div>
-
-      {/* Chart */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-card p-6 mb-8">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Migration Trends</h3>
-        <div className="h-64">
-          <Line data={chartData} options={{ 
-            maintainAspectRatio: false,
-            color: 'rgb(209, 213, 219)', // gray-300 for better visibility in dark mode
-            scales: {
-              y: {
-                grid: {
-                  color: 'rgba(107, 114, 128, 0.2)', // gray-500 with opacity
-                },
-                ticks: {
-                  color: 'rgb(107, 114, 128)', // gray-500
-                }
-              },
-              x: {
-                grid: {
-                  color: 'rgba(107, 114, 128, 0.2)', // gray-500 with opacity
-                },
-                ticks: {
-                  color: 'rgb(107, 114, 128)', // gray-500
-                }
-              }
-            }
-          }} />
-        </div>
       </div>
 
       {/* Search and Filters */}

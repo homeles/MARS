@@ -5,6 +5,7 @@ import { Dashboard } from './pages/Dashboard';
 import MigrationDetails from './pages/MigrationDetails';
 import NotFound from './pages/NotFound';
 import Settings from './pages/Settings';
+import Reporting from './pages/Reporting';
 
 export const App: React.FC = () => {
   return (
@@ -15,6 +16,7 @@ export const App: React.FC = () => {
           <Route path="/" element={<Dashboard />} />
           <Route path="/migrations/:id" element={<MigrationDetails />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/reporting" element={<Reporting />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </div>

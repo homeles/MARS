@@ -20,6 +20,12 @@ const Navbar: React.FC = () => {
                 Dashboard
               </Link>
               <Link
+                to="/reporting"
+                className="text-base font-medium text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white px-3 py-2 rounded-md transition"
+              >
+                Reports
+              </Link>
+              <Link
                 to="/settings"
                 className="text-base font-medium text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white px-3 py-2 rounded-md transition"
               >
