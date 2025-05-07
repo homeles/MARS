@@ -2,6 +2,8 @@
 
 A modern, full-stack application to monitor and track GitHub Repository Migrations using GitHub GraphQL API. This application allows you to sync, track, and visualize repository migration information across your GitHub Enterprise organization.
 
+![](./docs/images/home-dashboard.png)
+
 ## Features
 
 - 📊 Track migration status for all repositories in your GitHub organization
