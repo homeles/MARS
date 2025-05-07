@@ -299,6 +299,13 @@ async function processMigration(migration: any, enterpriseName: string, orgLogin
         existingMigration.warningsCount = migration.warningsCount;
         existingMigration.failureReason = migration.failureReason;
         existingMigration.migrationSource = migration.migrationSource;
+        
+        // Calculate duration if the state changed to SUCCEEDED
+        if (migration.state === MigrationState.SUCCEEDED) {
+          const now = new Date();
+          existingMigration.duration = now.getTime() - createdAtDate.getTime();
+        }
+        
         await existingMigration.save();
       }
     } else {
@@ -314,7 +321,8 @@ async function processMigration(migration: any, enterpriseName: string, orgLogin
         repositoryName: migration.repositoryName,
         enterpriseName: enterpriseName,
         organizationName: orgLogin,
-        migrationSource: migration.migrationSource
+        migrationSource: migration.migrationSource,
+        duration: migration.state === MigrationState.SUCCEEDED ? (new Date().getTime() - createdAtDate.getTime()) : undefined
       });
     }
   } catch (error) {
@@ -482,7 +490,7 @@ export const resolvers = {
         const hasPreviousPage = skip > 0;
 
         // Get metrics for all states - use more efficient aggregation
-        const [allCount, completedCount, failedCount, inProgressCount] = await Promise.all([
+        const [allCount, completedCount, failedCount, inProgressCount, queuedCount] = await Promise.all([
           RepositoryMigration.countDocuments(query),
           RepositoryMigration.countDocuments({ ...query, state: MigrationState.SUCCEEDED }),
           RepositoryMigration.countDocuments({ 
@@ -495,10 +503,13 @@ export const resolvers = {
               $in: [
                 MigrationState.IN_PROGRESS, 
                 MigrationState.NOT_STARTED, 
-                MigrationState.PENDING_VALIDATION, 
-                MigrationState.QUEUED
+                MigrationState.PENDING_VALIDATION
               ] 
             } 
+          }),
+          RepositoryMigration.countDocuments({
+            ...query,
+            state: MigrationState.QUEUED
           })
         ]);
 
@@ -517,7 +528,8 @@ export const resolvers = {
           totalCount: allCount,
           completedCount,
           failedCount,
-          inProgressCount
+          inProgressCount,
+          queuedMigrations: queuedCount
         };
       } catch (error) {
         console.error('[ERROR] Error in allMigrations resolver:', error);
@@ -606,32 +618,69 @@ export const resolvers = {
         throw new Error('Authentication token is required');
       }
 
-      // First get organizations
-      const orgs = await fetchAllOrganizations(enterpriseName, token);
-      let allMigrations: any[] = [];
-
-      // Get migrations for each organization
-      for (const org of orgs) {
-        try {
-          const { migrations } = await fetchOrganizationMigrations(org.login, token);
-          allMigrations = [...allMigrations, ...migrations];
-        } catch (error) {
-          console.error(`Error fetching migrations for org ${org.login}:`, error);
-          continue;
+      // Use aggregation to get stats efficiently
+      const stats = await RepositoryMigration.aggregate([
+        { $match: { enterpriseName } },
+        {
+          $group: {
+            _id: null,
+            totalMigrations: { $sum: 1 },
+            completedMigrations: {
+              $sum: { $cond: [{ $eq: ["$state", MigrationState.SUCCEEDED] }, 1, 0] }
+            },
+            failedMigrations: {
+              $sum: {
+                $cond: [{
+                  $in: ["$state", [MigrationState.FAILED, MigrationState.FAILED_VALIDATION]]
+                }, 1, 0]
+              }
+            },
+            queuedMigrations: {
+              $sum: { $cond: [{ $eq: ["$state", MigrationState.QUEUED] }, 1, 0] }
+            },
+            inProgressMigrations: {
+              $sum: {
+                $cond: [{
+                  $in: ["$state", [
+                    MigrationState.IN_PROGRESS,
+                    MigrationState.NOT_STARTED,
+                    MigrationState.PENDING_VALIDATION
+                  ]]
+                }, 1, 0]
+              }
+            },
+            averageDuration: {
+              $avg: {
+                $cond: [
+                  { $and: [
+                    { $eq: ["$state", MigrationState.SUCCEEDED] },
+                    { $ne: ["$duration", null] }
+                  ]},
+                  "$duration",
+                  null
+                ]
+              }
+            }
+          }
         }
-      }
+      ]).exec();
 
-      const totalMigrations = allMigrations.length;
-      const completedMigrations = allMigrations.filter((m: Migration) => m.state === 'SUCCEEDED').length;
-      const failedMigrations = allMigrations.filter((m: Migration) => m.state === 'FAILED').length;
-      const inProgressMigrations = allMigrations.filter((m: Migration) => m.state === 'IN_PROGRESS').length;
+      const result = stats[0] || {
+        totalMigrations: 0,
+        completedMigrations: 0,
+        failedMigrations: 0,
+        inProgressMigrations: 0,
+        queuedMigrations: 0,
+        averageDuration: null
+      };
 
       return {
-        totalMigrations,
-        completedMigrations,
-        failedMigrations,
-        inProgressMigrations,
-        averageDuration: null // We can't calculate this without completedAt
+        totalMigrations: result.totalMigrations,
+        completedMigrations: result.completedMigrations,
+        failedMigrations: result.failedMigrations,
+        inProgressMigrations: result.inProgressMigrations,
+        queuedMigrations: result.queuedMigrations,
+        averageDuration: result.averageDuration
       };
     },
 

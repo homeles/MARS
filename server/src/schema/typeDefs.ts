@@ -44,6 +44,7 @@ export const typeDefs = gql`
     completedCount: Int!
     failedCount: Int!
     inProgressCount: Int!
+    queuedMigrations: Int!
   }
 
   type OrganizationConnection {
@@ -172,6 +173,7 @@ export const typeDefs = gql`
     completedMigrations: Int!
     failedMigrations: Int!
     inProgressMigrations: Int!
+    queuedMigrations: Int!
     averageDuration: Float
   }
 

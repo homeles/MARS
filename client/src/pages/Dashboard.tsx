@@ -58,6 +58,7 @@ const GET_MIGRATIONS = gql`
       completedCount
       failedCount
       inProgressCount
+      queuedMigrations
     }
   }
 `;
@@ -195,7 +196,8 @@ export const Dashboard: React.FC = () => {
     total: data?.allMigrations?.totalCount || 0,
     succeeded: data?.allMigrations?.completedCount || 0,
     failed: data?.allMigrations?.failedCount || 0,
-    inProgress: data?.allMigrations?.inProgressCount || 0
+    inProgress: data?.allMigrations?.inProgressCount || 0,
+    queued: data?.allMigrations?.queuedMigrations || 0
   };
 
   const renderRow = (migration: Migration) => {
@@ -393,7 +395,7 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
         <StatsCard
           title="Total Migrations"
           value={stats.total}
@@ -409,6 +411,13 @@ export const Dashboard: React.FC = () => {
         <StatsCard
           title="Failed Migrations"
           value={stats.failed}
+        />
+        <StatsCard
+          title="Queued"
+          value={stats.queued}
+          icon={<svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>}
         />
         <StatsCard
           title="In Progress"
