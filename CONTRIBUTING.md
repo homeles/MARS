@@ -1,6 +1,6 @@
 # Contributing to Project *'MARS'*
 
-Thank you for your interest in contributing to **[Project Name]**!  
+Thank you for your interest in contributing to **Project 'MARS'**!  
 Your help is appreciated — whether it's fixing bugs, improving documentation, or suggesting new features.
 
 ## 🙌 Ground Rules
