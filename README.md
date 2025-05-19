@@ -1,4 +1,6 @@
-# Migration Analysis & Reporting System (MARS)
+# Project MARS 🔭
+
+_**M**igration **A**nalysis & **R**eporting **S**ystem_
 
 A modern, full-stack application to monitor and track GitHub Repository Migrations using GitHub GraphQL API. This application allows you to sync, track, and visualize repository migration information across your GitHub Enterprise organization.
 
@@ -69,8 +71,8 @@ For more details, see the [GitHub Enterprise Importer documentation](https://doc
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/yourusername/GHEC-Migrations-tracker.git
-cd GHEC-Migrations-tracker
+git clone https://github.com/yourusername/mars.git
+cd mars
 ```
 
 2. **Start the application with Docker Compose**
@@ -93,8 +95,8 @@ Open your browser and navigate to http://localhost:3000
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/yourusername/GHEC-Migrations-tracker.git
-cd GHEC-Migrations-tracker
+git clone https://github.com/yourusername/mars.git
+cd mars
 ```
 
 2. **Set up and start the server**
