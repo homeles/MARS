@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FaBars, FaTimes, FaChartBar, FaFileAlt, FaCog } from 'react-icons/fa';
+import { FaBars, FaTimes, FaChartBar } from 'react-icons/fa';
 import { TelescopeIcon, FileIcon, GearIcon } from '@primer/octicons-react';
 
 const Navbar: React.FC = () => {
