@@ -1,4 +1,4 @@
-# GitHub Repository Migrations Tracker
+# Migration Analysis & Reporting System (MARS)
 
 A modern, full-stack application to monitor and track GitHub Repository Migrations using GitHub GraphQL API. This application allows you to sync, track, and visualize repository migration information across your GitHub Enterprise organization.
 
