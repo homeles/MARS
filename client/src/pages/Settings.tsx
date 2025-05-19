@@ -435,7 +435,27 @@ export const Settings: React.FC = () => {
   };
 
   return (
+    
     <div>
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+        <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">About Repository Migrations</h2>
+        <p className="text-gray-600 dark:text-gray-300 mb-4">
+          This tool helps you monitor GitHub repository migrations across your enterprise organizations. 
+          It uses GitHub's GraphQL API to fetch real-time migration status information.
+        </p>
+        <p className="text-gray-600 dark:text-gray-300">
+          For more information about repository migrations, visit the{' '}
+          <a 
+            href="https://docs.github.com/en/migrations/using-github-enterprise-importer/understanding-github-enterprise-importer/about-github-enterprise-importer" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+          >
+            GitHub Enterprise Importer documentation
+          </a>.
+        </p>
+      </div>
+      <br />
       <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Settings</h1>
       
       <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
@@ -659,24 +679,7 @@ export const Settings: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
-        <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">About Repository Migrations</h2>
-        <p className="text-gray-600 dark:text-gray-300 mb-4">
-          This tool helps you monitor GitHub repository migrations across your enterprise organizations. 
-          It uses GitHub's GraphQL API to fetch real-time migration status information.
-        </p>
-        <p className="text-gray-600 dark:text-gray-300">
-          For more information about repository migrations, visit the{' '}
-          <a 
-            href="https://docs.github.com/en/migrations/using-github-enterprise-importer/understanding-github-enterprise-importer/about-github-enterprise-importer" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
-          >
-            GitHub Enterprise Importer documentation
-          </a>.
-        </p>
-      </div>
+    
     </div>
   );
 };
