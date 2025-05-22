@@ -41,6 +41,7 @@ const GET_MIGRATIONS = gql`
         failureReason
         organizationName
         enterpriseName
+        duration
         migrationSource {
           id
           name
