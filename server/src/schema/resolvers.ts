@@ -753,6 +753,15 @@ export const resolvers = {
   },
 
   Mutation: {
+    deleteMigration: async (_: unknown, { id }: { id: string }) => {
+      try {
+        const result = await RepositoryMigration.findByIdAndDelete(id);
+        return !!result; // Returns true if the migration was found and deleted, false otherwise
+      } catch (error) {
+        console.error('Error deleting migration:', error);
+        throw new Error('Failed to delete migration');
+      }
+    },
     syncMigrations: async (_: any, { enterpriseName, token, selectedOrganizations }: { enterpriseName: string, token: string, selectedOrganizations?: string[] }) => {
       try {
         console.log(`[Sync] Starting migration sync for enterprise: ${enterpriseName}`);

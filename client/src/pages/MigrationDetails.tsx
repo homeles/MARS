@@ -1,9 +1,15 @@
 import React from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery, gql } from '@apollo/client';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, gql } from '@apollo/client';
 import MigrationStatusBadge from '../components/MigrationStatusBadge';
 import { Migration } from '../types';
 import { logger } from '../utils/logger';
+
+const DELETE_MIGRATION = gql`
+  mutation DeleteMigration($id: ID!) {
+    deleteMigration(id: $id)
+  }
+`;
 
 const GET_MIGRATION = gql`
   query GetMigration($id: ID!) {
@@ -34,10 +40,21 @@ const GET_MIGRATION = gql`
 
 const MigrationDetails: React.FC = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { data, loading, error } = useQuery(GET_MIGRATION, {
     variables: { id },
     onError: (error) => {
       logger.error('Failed to fetch migration details', { error: error.message });
+    }
+  });
+
+  const [deleteMigration] = useMutation(DELETE_MIGRATION, {
+    onCompleted: () => {
+      logger.info('Migration deleted successfully');
+      navigate('/');
+    },
+    onError: (error) => {
+      logger.error('Failed to delete migration', { error: error.message });
     }
   });
 
@@ -87,18 +104,35 @@ const MigrationDetails: React.FC = () => {
 
   const repoUrl = `https://github.com/${migration.organizationName}/${migration.repositoryName}`;
 
+  const handleDelete = () => {
+    if (window.confirm('Are you sure you want to delete this migration from the local database? This action cannot be undone.')) {
+      deleteMigration({
+        variables: { id: migration.id }
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           Migration Details
         </h1>
-        <Link
-          to="/"
-          className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-        >
-          Back to Dashboard
-        </Link>
+        <div className="flex space-x-4">
+          <button
+            onClick={handleDelete}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            type="button"
+          >
+            Delete Migration
+          </button>
+          <Link
+            to="/"
+            className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          >
+            Back to Dashboard
+          </Link>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 shadow-card rounded-lg">
