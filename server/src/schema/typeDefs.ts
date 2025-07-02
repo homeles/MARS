@@ -191,6 +191,7 @@ export const typeDefs = gql`
     saveUserPreferences(preferences: [UserPreferenceInput!]!): [UserPreference!]!
     deleteUserPreference(key: String!): Boolean!
     updateCronConfig(enterpriseName: String!, schedule: String!, enabled: Boolean!): CronConfig
+    deleteMigration(id: ID!): Boolean!
   }
 
   input UserPreferenceInput {
