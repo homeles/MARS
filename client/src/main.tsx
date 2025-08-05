@@ -13,6 +13,7 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import { setContext } from '@apollo/client/link/context';
 import { ThemeProvider } from './utils/ThemeContext';
+import { AuthProvider } from './utils/AuthContext';
 import App from './App';
 import './index.css';
 
@@ -89,7 +90,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <ApolloProvider client={client}>
         <ThemeProvider>
-          <App />
+          <AuthProvider>
+            <App />
+          </AuthProvider>
         </ThemeProvider>
       </ApolloProvider>
     </BrowserRouter>
