@@ -21,7 +21,19 @@ router.post('/login', (req, res) => {
   const usernameMatch = (usernameBuffer.length === validUsernameBuffer.length) &&
     crypto.timingSafeEqual(usernameBuffer, validUsernameBuffer);
   const passwordMatch = (passwordBuffer.length === validPasswordBuffer.length) &&
-    crypto.timingSafeEqual(passwordBuffer, validPasswordBuffer);
+  // Pad buffers to the same length for timingSafeEqual
+  function padBuffers(buf1: Buffer, buf2: Buffer): [Buffer, Buffer] {
+    const maxLength = Math.max(buf1.length, buf2.length);
+    const padded1 = Buffer.concat([buf1, Buffer.alloc(maxLength - buf1.length)]);
+    const padded2 = Buffer.concat([buf2, Buffer.alloc(maxLength - buf2.length)]);
+    return [padded1, padded2];
+  }
+
+  const [paddedUsernameBuffer, paddedValidUsernameBuffer] = padBuffers(usernameBuffer, validUsernameBuffer);
+  const [paddedPasswordBuffer, paddedValidPasswordBuffer] = padBuffers(passwordBuffer, validPasswordBuffer);
+
+  const usernameMatch = crypto.timingSafeEqual(paddedUsernameBuffer, paddedValidUsernameBuffer);
+  const passwordMatch = crypto.timingSafeEqual(paddedPasswordBuffer, paddedValidPasswordBuffer);
   
   if (usernameMatch && passwordMatch) {
     // In a production app, you would generate a JWT token here
