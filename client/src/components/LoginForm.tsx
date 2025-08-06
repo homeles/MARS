@@ -10,18 +10,26 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onCancel }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
     
-    const success = login(username, password);
-    
-    if (success) {
-      if (onSuccess) onSuccess();
-    } else {
-      setError('Invalid username or password');
+    try {
+      const success = await login(username, password);
+      
+      if (success) {
+        if (onSuccess) onSuccess();
+      } else {
+        setError('Invalid username or password');
+      }
+    } catch (err) {
+      setError('An error occurred during login. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -77,9 +85,10 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onCancel }) => {
             )}
             <button
               type="submit"
-              className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700"
+              disabled={isLoading}
+              className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:bg-gray-400"
             >
-              Login
+              {isLoading ? 'Logging in...' : 'Login'}
             </button>
           </div>
         </form>

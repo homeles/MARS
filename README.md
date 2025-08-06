@@ -128,13 +128,17 @@ Open your browser and navigate to http://localhost:3000
 
 ### Backend Configuration
 
-Edit the `.env` file in the server directory to modify:
+Edit the `.env` file in the root directory to modify:
 
 - `PORT`: The port on which the server will run (default: 4000)
 - `MONGO_URI`: MongoDB connection string (default: mongodb://localhost:27017/github-migrations)
 - `NODE_ENV`: Environment mode (development or production)
+- `GITHUB_TOKEN`: GitHub Personal Access Token for server-side API calls
+- `GITHUB_ENTERPRISE_NAME`: Your GitHub Enterprise name
 - `MARS_ADMIN`: Username for Settings page authentication (default: admin)
 - `MARS_PASSWORD`: Password for Settings page authentication (default: secure123)
+
+**Important**: All credential configuration is managed from the root `.env` file to ensure security.
 
 ### GitHub Authentication
 
@@ -176,6 +180,10 @@ The GraphQL API is available at http://localhost:4000/graphql and provides:
   - `syncMigrations`: Sync migrations from GitHub to the local database
   - `addMigration`: Manually add migration to the local database
   - `updateMigration`: Update migration in the local database
+
+## Security
+
+The application follows security best practices for handling sensitive credentials. For details about the recent security updates, please see [SECURITY_UPDATE.md](docs/SECURITY_UPDATE.md).
 
 ## License
 

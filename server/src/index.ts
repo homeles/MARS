@@ -15,6 +15,7 @@ import dotenv from 'dotenv';
 import { merge } from 'lodash';
 import mongoose from 'mongoose';
 import { initializeCronJobs } from './utils/cronManager';
+import authRoutes from './routes/authRoutes';
 
 dotenv.config();
 
@@ -125,6 +126,9 @@ async function startServer() {
 
   app.use(cors());
   app.use(express.json());
+
+  // Register auth routes
+  app.use('/api', authRoutes);
 
   // Apply Apollo Server middleware with minimal context logging
   app.use('/graphql', expressMiddleware(server, {

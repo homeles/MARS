@@ -7,12 +7,16 @@ export default defineConfig({
   server: {
     host: true, // Listen on all network interfaces
     port: 3000,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true
+      }
+    }
   },
   define: {
-    'process.env.GITHUB_TOKEN': JSON.stringify(process.env.VITE_GITHUB_TOKEN),
-    'process.env.GITHUB_ENTERPRISE_NAME': JSON.stringify(process.env.VITE_GITHUB_ENTERPRISE_NAME),
-    'process.env.MARS_ADMIN': JSON.stringify(process.env.VITE_MARS_ADMIN),
-    'process.env.MARS_PASSWORD': JSON.stringify(process.env.VITE_MARS_PASSWORD)
+    // Do not expose sensitive credentials to client-side code.
+    // If you need to expose non-sensitive config, add it here.
   }
 })
