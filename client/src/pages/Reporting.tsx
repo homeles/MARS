@@ -183,7 +183,7 @@ const Reporting: React.FC = () => {
         />
         <StatsCard
           title="Success Rate"
-          value={metrics.totalCount > 0 ? `${Math.round((metrics.completedCount / metrics.totalCount) * 100)}%` : '0%'}
+          value={metrics.totalCount > 0 ? `${Math.round(((metrics.completedCount || 0) / metrics.totalCount) * 100)}%` : '0%'}
           trend={{
             value: 5,
             isPositive: true
