@@ -629,7 +629,7 @@ export const resolvers = {
     enterpriseStats: async (
       _: unknown,
       { enterpriseName }: { enterpriseName: string },
-      { token }: ResolverContext
+      { enterpriseName }: { enterpriseName: string }
     ) => {
       // Stats can be viewed without authentication
       // This allows dashboard and reporting pages to work without a token
