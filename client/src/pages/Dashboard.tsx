@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, gql } from '@apollo/client';
 import StatsCard from '../components/StatsCard';
 import MigrationStatusBadge from '../components/MigrationStatusBadge';
+import Tooltip from '../components/Tooltip';
 import { MigrationState, Migration } from '../types';
 import { logger } from '../utils/logger';
 import debounce from 'lodash.debounce';
@@ -268,7 +269,18 @@ export const Dashboard: React.FC = () => {
           {migration.warningsCount || 0}
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-          {migration.duration ? `${Math.round(migration.duration / 1000 / 60)} mins` : '-'}
+          <Tooltip 
+            text="The duration is not a value directly reported by the migration process. Instead, it is estimated based on the time difference between when the migration was created and when the sync process last detected the status change for example, from In-Progress to Completed. Reducing the sync interval provides a more accurate duration estimate"
+            position="right"
+            width={350}
+          >
+            <span className="flex items-center cursor-help">
+              {migration.duration ? `${Math.round(migration.duration / 1000 / 60)} mins` : '-'}
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
+          </Tooltip>
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-red-500 dark:text-red-400 truncate max-w-xs">
           {migration.failureReason || '-'}
@@ -560,11 +572,25 @@ export const Dashboard: React.FC = () => {
                   title="Warnings"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
                 />
-                <SortableHeader
-                  field="DURATION"
-                  title="Duration"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
-                />
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <div className="flex items-center cursor-pointer" onClick={() => handleSort('DURATION')}>
+                    <Tooltip 
+                      text="The duration is not a value directly reported by the migration process. Instead, it is estimated based on the time difference between when the migration was created and when the sync process last detected the status change for example, from In-Progress to Completed. Reducing the sync interval provides a more accurate duration estimate"
+                      position="bottom"
+                      width={350}
+                    >
+                      <div className="flex items-center">
+                        <span>Duration</span>
+                        <span className={`ml-1 ${sortField === 'DURATION' ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
+                          {sortField === 'DURATION' ? (sortDirection === 'ASC' ? '↑' : '↓') : '↕'}
+                        </span>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                    </Tooltip>
+                  </div>
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Failure Reason
                 </th>

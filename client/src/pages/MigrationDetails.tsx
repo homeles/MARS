@@ -2,6 +2,7 @@ import React from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, gql } from '@apollo/client';
 import MigrationStatusBadge from '../components/MigrationStatusBadge';
+import Tooltip from '../components/Tooltip';
 import { Migration } from '../types';
 import { logger } from '../utils/logger';
 
@@ -184,7 +185,20 @@ const MigrationDetails: React.FC = () => {
                     <p className="mt-1 text-sm text-gray-900 dark:text-white">{formattedDate}</p>
                   </div>
                   <div>
-                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Duration</h4>
+                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center">
+                      <Tooltip 
+                        text="The duration is not a value directly reported by the migration process. Instead, it is estimated based on the time difference between when the migration was created and when the sync process last detected the status change for example, from In-Progress to Completed. Reducing the sync interval provides a more accurate duration estimate"
+                        position="right"
+                        width={350}
+                      >
+                        <span className="flex items-center cursor-help">
+                          Duration
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </span>
+                      </Tooltip>
+                    </h4>
                     <p className="mt-1 text-sm text-gray-900 dark:text-white">
                       {migration.duration ? `${Math.round(migration.duration / 1000 / 60)} minutes` : 'Not completed'}
                     </p>
