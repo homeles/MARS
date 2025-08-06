@@ -60,7 +60,6 @@ services:
       - VITE_GITHUB_TOKEN=${GITHUB_TOKEN}
       - VITE_GITHUB_ENTERPRISE_NAME=${GITHUB_ENTERPRISE_NAME}
       - VITE_MARS_ADMIN=${MARS_ADMIN}
-      - VITE_MARS_PASSWORD=${MARS_PASSWORD}
     depends_on:
       - server
     volumes:
