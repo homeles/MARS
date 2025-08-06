@@ -13,7 +13,8 @@ A modern, full-stack application to monitor and track GitHub Repository Migratio
 - 🔄 Sync migrations from GitHub API with a personal access token
 - 📈 View statistics about migration success rates and status
 - � Protected Settings page with username/password authentication
-- �📱 Modern, responsive UI built with React and Tailwind CSS
+- 🔒 Protected Settings page with username/password authentication
+- 📱 Modern, responsive UI built with React and Tailwind CSS
 
 ## Tech Stack
 
