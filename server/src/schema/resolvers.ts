@@ -392,7 +392,7 @@ async function fetchMigrationsPage(orgLogin: string, token: string, cursor: stri
       headers: {
         'Authorization': token && token.trim() !== '' ? 
           (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : 
-          (process.env.GITHUB_TOKEN ? `Bearer ${process.env.GITHUB_TOKEN}` : ''),
+        'Authorization': getAuthorizationHeader(token),
         'Content-Type': 'application/json',
       }
     }
