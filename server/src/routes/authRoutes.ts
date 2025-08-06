@@ -11,16 +11,6 @@ router.post('/login', (req, res) => {
   const validUsername = process.env.MARS_ADMIN;
   const validPassword = process.env.MARS_PASSWORD;
   
-  // Use constant-time comparison for username and password
-  const usernameBuffer = Buffer.from(username || '', 'utf8');
-  const validUsernameBuffer = Buffer.from(validUsername || '', 'utf8');
-  const passwordBuffer = Buffer.from(password || '', 'utf8');
-  const validPasswordBuffer = Buffer.from(validPassword || '', 'utf8');
-  
-  // Ensure buffers are the same length for timingSafeEqual
-  const usernameMatch = (usernameBuffer.length === validUsernameBuffer.length) &&
-    crypto.timingSafeEqual(usernameBuffer, validUsernameBuffer);
-  const passwordMatch = (passwordBuffer.length === validPasswordBuffer.length) &&
   // Pad buffers to the same length for timingSafeEqual
   function padBuffers(buf1: Buffer, buf2: Buffer): [Buffer, Buffer] {
     const maxLength = Math.max(buf1.length, buf2.length);
@@ -29,6 +19,13 @@ router.post('/login', (req, res) => {
     return [padded1, padded2];
   }
 
+  // Use constant-time comparison for username and password
+  const usernameBuffer = Buffer.from(username || '', 'utf8');
+  const validUsernameBuffer = Buffer.from(validUsername || '', 'utf8');
+  const passwordBuffer = Buffer.from(password || '', 'utf8');
+  const validPasswordBuffer = Buffer.from(validPassword || '', 'utf8');
+  
+  // Apply padding and perform constant-time comparison
   const [paddedUsernameBuffer, paddedValidUsernameBuffer] = padBuffers(usernameBuffer, validUsernameBuffer);
   const [paddedPasswordBuffer, paddedValidPasswordBuffer] = padBuffers(passwordBuffer, validPasswordBuffer);
 

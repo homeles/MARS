@@ -392,7 +392,7 @@ async function fetchMigrationsPage(orgLogin: string, token: string, cursor: stri
       headers: {
         'Authorization': token && token.trim() !== '' ? 
           (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : 
-        'Authorization': getAuthorizationHeader(token),
+          `Bearer ${process.env.GITHUB_TOKEN || ''}`,
         'Content-Type': 'application/json',
       }
     }
@@ -629,7 +629,7 @@ export const resolvers = {
     enterpriseStats: async (
       _: unknown,
       { enterpriseName }: { enterpriseName: string },
-      { enterpriseName }: { enterpriseName: string }
+      _context: any
     ) => {
       // Stats can be viewed without authentication
       // This allows dashboard and reporting pages to work without a token

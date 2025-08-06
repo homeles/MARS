@@ -109,27 +109,22 @@ export const Dashboard: React.FC = () => {
 
   // Fetch organizations for the dropdown
   // We first need to get the enterprise name from user preferences
-  const { data: enterpriseData } = useQuery(gql`
-    query GetEnterprisePreference {
-      userPreferences(keys: ["defaultEnterpriseName"]) {
-        key
-        value
-      }
-    }
-  `);
-
-  const defaultEnterprise = 
-    enterpriseData?.userPreferences?.find((pref: any) => pref.key === 'defaultEnterpriseName')?.value || '';
-  // We first need to get the enterprise name from user preferences via /api/github-config
+  // Get the enterprise name from the environment
   const [defaultEnterprise, setDefaultEnterprise] = useState<string>('');
-  const [enterpriseLoading, setEnterpriseLoading] = useState<boolean>(true);
-  const [enterpriseError, setEnterpriseError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchEnterprise = async () => {
-      setEnterpriseLoading(true);
-      setEnterpriseError(null);
       try {
+        // Get enterprise name from environment variables first
+        const envEnterprise = import.meta.env.VITE_GITHUB_ENTERPRISE_NAME;
+        if (envEnterprise) {
+          console.log('Using enterprise from environment:', envEnterprise);
+          setDefaultEnterprise(envEnterprise);
+          return;
+        }
+        
+        // Fallback to API if env variable not set
+        console.log('Environment variable not set, fetching from API...');
         const response = await fetch('/api/github-config');
         if (!response.ok) {
           throw new Error(`Failed to fetch config: ${response.statusText}`);
@@ -137,10 +132,8 @@ export const Dashboard: React.FC = () => {
         const config = await response.json();
         setDefaultEnterprise(config?.defaultEnterpriseName || '');
       } catch (error: any) {
-        setEnterpriseError(error.message || 'Unknown error');
+        console.error('Error fetching enterprise name:', error.message);
         setDefaultEnterprise('');
-      } finally {
-        setEnterpriseLoading(false);
       }
     };
     fetchEnterprise();
