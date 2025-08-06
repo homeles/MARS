@@ -26,49 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       sessionStorage.removeItem('adminAuth');
     }
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [token, setToken] = useState<string | null>(() => {
-    // Check if we have a stored JWT token
-    return sessionStorage.getItem('authToken');
-  });
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // On mount, verify token with server if present
-  useEffect(() => {
-    const verifyToken = async () => {
-      if (token) {
-        setLoading(true);
-        try {
-          const response = await fetch('/api/verify-token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({ token }),
-          });
-          const data = await response.json();
-          if (data.valid) {
-            setIsAuthenticated(true);
-          } else {
-            setIsAuthenticated(false);
-            setToken(null);
-            sessionStorage.removeItem('authToken');
-          }
-        } catch (err) {
-          setIsAuthenticated(false);
-          setToken(null);
-          sessionStorage.removeItem('authToken');
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        setIsAuthenticated(false);
-      }
-    };
-    verifyToken();
-  }, [token]);
+  }, [isAuthenticated]);
 
   const login = async (username: string, password: string): Promise<boolean> => {
     setLoading(true);

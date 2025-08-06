@@ -108,8 +108,22 @@ export const Dashboard: React.FC = () => {
   };
 
   // Fetch organizations for the dropdown
+  // We first need to get the enterprise name from user preferences
+  const { data: enterpriseData } = useQuery(gql`
+    query GetEnterprisePreference {
+      userPreferences(keys: ["defaultEnterpriseName"]) {
+        key
+        value
+      }
+    }
+  `);
+
+  const defaultEnterprise = 
+    enterpriseData?.userPreferences?.find((pref: any) => pref.key === 'defaultEnterpriseName')?.value || '';
+  
   const { data: organizationsData } = useQuery(GET_ORGANIZATIONS, {
-    variables: { enterprise: import.meta.env.VITE_GITHUB_ENTERPRISE_NAME || '' }
+    variables: { enterprise: defaultEnterprise },
+    skip: !defaultEnterprise
   });
   const organizations = organizationsData?.enterprise?.organizations?.nodes?.map((node: { login: string }) => node.login) || [];
 

@@ -18,6 +18,15 @@ This update addresses a critical security vulnerability where sensitive credenti
 
 4. **Added development proxy configuration**:
    - Added a development proxy in Vite to forward API requests to the backend server
+   
+5. **Added GitHub configuration endpoint**:
+   - Created a new `/api/github-config` endpoint that securely provides GitHub configuration status
+   - Removed direct GitHub token access from client-side code
+   - GraphQL mutations now use server-side token for GitHub API access
+
+6. **Updated resolver token handling**:
+   - Modified GraphQL resolvers to use environment variables for GitHub token
+   - Allowed empty token parameters from client for improved security
 
 ## Security Best Practices
 
@@ -33,6 +42,15 @@ This update addresses a critical security vulnerability where sensitive credenti
    - Validate credentials on the server, not in client code
    - Consider using JWT tokens or session-based authentication for more secure implementations
 
+4. **Securely handle API tokens**:
+   - Never pass API tokens from client to server - retrieve them from environment variables
+   - Create dedicated endpoints for checking configuration status without exposing credentials
+   - Use empty token parameters from client when server-side token is available
+
+5. **Protect sensitive operations**:
+   - Require authentication for sensitive operations
+   - Apply least privilege principle when granting permissions
+
 ## How to Run the Application
 
 1. Copy `.env.example` to `.env` in the root directory and fill in your configuration values
@@ -44,3 +62,7 @@ This update addresses a critical security vulnerability where sensitive credenti
 1. Consider implementing a more robust authentication system with JWT tokens
 2. Add rate limiting to the login endpoint to prevent brute-force attacks
 3. Set up HTTPS in production environments to encrypt all communication
+4. Add role-based access control for different levels of application access
+5. Implement an audit log for tracking sensitive operations
+6. Consider implementing GitHub OAuth instead of personal access tokens
+7. Add two-factor authentication for admin access

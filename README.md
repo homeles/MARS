@@ -127,28 +127,46 @@ Open your browser and navigate to http://localhost:3000
 
 ## Configuration
 
-### Backend Configuration
+### Application Configuration
 
-Edit the `.env` file in the root directory to modify:
+Create and edit the `.env` file in the root directory to configure the application:
+
+```
+# Server Configuration
+PORT=4000
+NODE_ENV=development
+MONGO_URI=mongodb://mongodb:27017/github-migrations
+
+# GitHub Configuration
+GITHUB_TOKEN=your_personal_access_token_here
+GITHUB_ENTERPRISE_NAME=your_enterprise_name
+
+# Authentication Credentials (change these in production!)
+MARS_ADMIN=admin
+MARS_PASSWORD=secure123
+```
+
+Key configurations:
 
 - `PORT`: The port on which the server will run (default: 4000)
-- `MONGO_URI`: MongoDB connection string (default: mongodb://localhost:27017/github-migrations)
+- `MONGO_URI`: MongoDB connection string (default: mongodb://mongodb:27017/github-migrations for Docker)
 - `NODE_ENV`: Environment mode (development or production)
 - `GITHUB_TOKEN`: GitHub Personal Access Token for server-side API calls
 - `GITHUB_ENTERPRISE_NAME`: Your GitHub Enterprise name
 - `MARS_ADMIN`: Username for Settings page authentication (default: admin)
 - `MARS_PASSWORD`: Password for Settings page authentication (default: secure123)
 
-**Important**: All credential configuration is managed from the root `.env` file to ensure security.
+**Important**: All credential configuration is managed from the root `.env` file to ensure security. The client-side code does not have direct access to these credentials.
 
-### GitHub Authentication
+### Using the Application
 
 To use the app:
 
-1. Go to the Settings page (requires authentication with the credentials defined in `.env`)
-2. Enter your GitHub Enterprise/Organization name
-3. Provide a GitHub Personal Access Token
-4. Click on "Sync Migrations from GitHub"
+1. Configure your GitHub token and enterprise name in the root `.env` file
+2. Start the application using Docker Compose
+3. Go to the Settings page (requires authentication with the credentials defined in `.env`)
+4. Verify that your GitHub token and enterprise name are correctly configured
+5. Select organizations to track and click "Sync Selected Organizations"
 
 ### Settings Page Authentication
 
@@ -184,7 +202,18 @@ The GraphQL API is available at http://localhost:4000/graphql and provides:
 
 ## Security
 
-The application follows security best practices for handling sensitive credentials. For details about the recent security updates, please see [SECURITY_UPDATE.md](docs/SECURITY_UPDATE.md).
+The application follows security best practices for handling sensitive credentials:
+
+- All credentials are stored server-side only
+- Authentication happens through secure server-side endpoints
+- GitHub tokens are never exposed to client-side code
+- GraphQL mutations use server-side tokens for GitHub API calls
+
+For complete details about the security measures and recent updates, please see [SECURITY_UPDATE.md](docs/SECURITY_UPDATE.md).
+
+## Troubleshooting
+
+If you encounter authentication issues with the GitHub API, please refer to our [Authentication Fix Documentation](docs/AUTH_FIX.md) which explains how we handle token authentication and recent fixes to token handling.
 
 ## License
 

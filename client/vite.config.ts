@@ -10,7 +10,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://server:4000',  // Use Docker service name instead of localhost
         changeOrigin: true
       }
     }

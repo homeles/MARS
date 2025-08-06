@@ -151,11 +151,12 @@ interface LogData {
 }
 
 export const Settings: React.FC = () => {
-  const [selectedEnterprise] = useState<string>(import.meta.env.VITE_GITHUB_ENTERPRISE_NAME || '');
-  const [accessToken] = useState<string>(import.meta.env.VITE_GITHUB_TOKEN || '');
+  const [selectedEnterprise, setSelectedEnterprise] = useState<string>('');
+  const [hasToken, setHasToken] = useState<boolean>(false);
   const [checkingAccess, setCheckingAccess] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<Error | null>(null);
+  const [configLoading, setConfigLoading] = useState<boolean>(true);
   // Initialize selectedOrgs from localStorage or empty array
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>(() => {
     try {
@@ -189,7 +190,7 @@ export const Settings: React.FC = () => {
 
   const { data: organizationsData, loading: orgsLoading, error: orgsError } = useQuery(GET_ENTERPRISE_ORGS, {
     variables: { enterpriseName: selectedEnterprise },
-    skip: !selectedEnterprise || !accessToken
+    skip: !selectedEnterprise || !hasToken
   });
 
   // Add CronConfig query
@@ -231,6 +232,30 @@ export const Settings: React.FC = () => {
       refetchSyncHistories();
     }
   });
+
+  // Fetch GitHub config from server
+  useEffect(() => {
+    const fetchGitHubConfig = async () => {
+      setConfigLoading(true);
+      try {
+        const response = await fetch('/api/github-config');
+        if (response.ok) {
+          const data = await response.json();
+          setSelectedEnterprise(data.enterpriseName);
+          setHasToken(data.hasToken);
+          // Token existence is now handled by hasToken state
+        } else {
+          console.error('Failed to fetch GitHub config:', await response.text());
+        }
+      } catch (error) {
+        console.error('Error fetching GitHub config:', error);
+      } finally {
+        setConfigLoading(false);
+      }
+    };
+
+    fetchGitHubConfig();
+  }, []);
 
   // Effect to load organizations from the last sync if there are no stored selections
   useEffect(() => {
@@ -346,7 +371,7 @@ export const Settings: React.FC = () => {
       await checkOrgAccessMutation({
         variables: {
           enterpriseName: selectedEnterprise,
-          token: accessToken
+          token: '' // Token is stored server-side now and passed from there
         }
       });
       
@@ -391,7 +416,7 @@ export const Settings: React.FC = () => {
       const result = await syncMigrations({
         variables: {
           enterpriseName: selectedEnterprise,
-          token: accessToken,
+          token: '', // Token is stored server-side now and passed from there
           selectedOrganizations: selectedOrgs.length > 0 ? selectedOrgs : null
         }
       });
@@ -464,9 +489,9 @@ export const Settings: React.FC = () => {
           <div className="flex gap-4">
             <button
               onClick={checkOrgAccess}
-              disabled={checkingAccess || !accessToken}
+              disabled={checkingAccess || !hasToken}
               className={`px-4 py-2 rounded-md text-white ${
-                !checkingAccess && accessToken
+                !checkingAccess && hasToken
                   ? 'bg-blue-600 hover:bg-blue-700'
                   : 'bg-gray-400 cursor-not-allowed'
               }`}
@@ -475,9 +500,9 @@ export const Settings: React.FC = () => {
             </button>
             <button
               onClick={handleSync}
-              disabled={!accessToken || syncing || selectedOrgs.length === 0}
+              disabled={!hasToken || syncing || selectedOrgs.length === 0}
               className={`px-4 py-2 rounded-md text-white ${
-                accessToken && !syncing && selectedOrgs.length > 0
+                hasToken && !syncing && selectedOrgs.length > 0
                   ? 'bg-primary-600 hover:bg-primary-700'
                   : 'bg-gray-400 cursor-not-allowed'
               }`}
@@ -513,15 +538,19 @@ export const Settings: React.FC = () => {
         <div className="space-y-4">
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">GitHub Token Status</h3>
-            <p className={`mt-1 text-sm ${accessToken ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {accessToken ? '✓ Token is configured' : '✗ Token is not configured'}
+            <p className={`mt-1 text-sm ${hasToken ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+              {configLoading 
+                ? 'Loading...' 
+                : hasToken 
+                  ? '✓ Token is configured' 
+                  : '✗ Token is not configured'}
             </p>
           </div>
 
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Enterprise Name</h3>
             <p className={`mt-1 text-sm ${selectedEnterprise ? 'text-gray-900 dark:text-gray-100' : 'text-red-600 dark:text-red-400'}`}>
-              {selectedEnterprise || 'Not configured'}
+              {configLoading ? 'Loading...' : (selectedEnterprise || 'Not configured')}
             </p>
           </div>
 
