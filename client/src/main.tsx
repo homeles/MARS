@@ -11,8 +11,8 @@ import {
 import { getMainDefinition } from '@apollo/client/utilities';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
-import { setContext } from '@apollo/client/link/context';
 import { ThemeProvider } from './utils/ThemeContext';
+import { AuthProvider } from './utils/AuthContext';
 import App from './App';
 import './index.css';
 
@@ -25,7 +25,7 @@ const httpLink = new HttpLink({
 const wsLink = new GraphQLWsLink(createClient({
   url: 'ws://localhost:4000/graphql',
   connectionParams: {
-    authToken: import.meta.env.VITE_GITHUB_TOKEN
+    // Authentication is handled server-side, no need for token here
   },
   retryAttempts: 5,
   retryWait: (retries) => new Promise((resolve) => setTimeout(resolve, retries * 1000)),
@@ -35,16 +35,7 @@ const wsLink = new GraphQLWsLink(createClient({
   }
 }));
 
-// Add authentication to Apollo Client requests
-const authLink = setContext((_, { headers }) => {
-  const token = import.meta.env.VITE_GITHUB_TOKEN;
-  return {
-    headers: {
-      ...headers,
-      authorization: token ? `Bearer ${token}` : '',
-    }
-  };
-});
+// We don't need authLink anymore as server handles auth for protected routes
 
 // Split links for subscription support
 const splitLink = split(
@@ -56,7 +47,7 @@ const splitLink = split(
     );
   },
   wsLink,
-  authLink.concat(httpLink)
+  httpLink
 );
 
 // Create Apollo Client with subscription support
@@ -89,7 +80,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <ApolloProvider client={client}>
         <ThemeProvider>
-          <App />
+          <AuthProvider>
+            <App />
+          </AuthProvider>
         </ThemeProvider>
       </ApolloProvider>
     </BrowserRouter>

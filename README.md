@@ -12,6 +12,7 @@ A modern, full-stack application to monitor and track GitHub Repository Migratio
 - 📝 Store migration data for historical reference and analysis
 - 🔄 Sync migrations from GitHub API with a personal access token
 - 📈 View statistics about migration success rates and status
+- 🔒 Protected Settings page with username/password authentication
 - 📱 Modern, responsive UI built with React and Tailwind CSS
 
 ## Tech Stack
@@ -125,22 +126,55 @@ Open your browser and navigate to http://localhost:3000
 
 ## Configuration
 
-### Backend Configuration
+### Application Configuration
 
-Edit the `.env` file in the server directory to modify:
+Create and edit the `.env` file in the root directory to configure the application:
+
+```
+# Server Configuration
+PORT=4000
+NODE_ENV=development
+MONGO_URI=mongodb://mongodb:27017/github-migrations
+
+# GitHub Configuration
+GITHUB_TOKEN=your_personal_access_token_here
+GITHUB_ENTERPRISE_NAME=your_enterprise_name
+
+# Authentication Credentials (change these in production!)
+MARS_ADMIN=admin
+MARS_PASSWORD=secure123
+```
+
+Key configurations:
 
 - `PORT`: The port on which the server will run (default: 4000)
-- `MONGO_URI`: MongoDB connection string (default: mongodb://localhost:27017/github-migrations)
+- `MONGO_URI`: MongoDB connection string (default: mongodb://mongodb:27017/github-migrations for Docker)
 - `NODE_ENV`: Environment mode (development or production)
+- `GITHUB_TOKEN`: GitHub Personal Access Token for server-side API calls
+- `GITHUB_ENTERPRISE_NAME`: Your GitHub Enterprise name
+- `MARS_ADMIN`: Username for Settings page authentication (default: admin)
+- `MARS_PASSWORD`: Password for Settings page authentication (default: secure123)
 
-### GitHub Authentication
+**Important**: All credential configuration is managed from the root `.env` file to ensure security. The client-side code does not have direct access to these credentials.
+
+### Using the Application
 
 To use the app:
 
-1. Go to the Settings page
-2. Enter your GitHub Enterprise/Organization name
-3. Provide a GitHub Personal Access Token
-4. Click on "Sync Migrations from GitHub"
+1. Configure your GitHub token and enterprise name in the root `.env` file
+2. Start the application using Docker Compose
+3. Go to the Settings page (requires authentication with the credentials defined in `.env`)
+4. Verify that your GitHub token and enterprise name are correctly configured
+5. Select organizations to track and click "Sync Selected Organizations"
+
+### Settings Page Authentication
+
+The Settings page is protected with a username/password authentication:
+
+- Default username: `admin` (configurable via `MARS_ADMIN` in `.env`)
+- Default password: `secure123` (configurable via `MARS_PASSWORD` in `.env`)
+
+**Important**: Make sure to change the default credentials in production environments!
 
 ## API Documentation
 
@@ -164,6 +198,21 @@ The GraphQL API is available at http://localhost:4000/graphql and provides:
   - `syncMigrations`: Sync migrations from GitHub to the local database
   - `addMigration`: Manually add migration to the local database
   - `updateMigration`: Update migration in the local database
+
+## Security
+
+The application follows security best practices for handling sensitive credentials:
+
+- All credentials are stored server-side only
+- Authentication happens through secure server-side endpoints
+- GitHub tokens are never exposed to client-side code
+- GraphQL mutations use server-side tokens for GitHub API calls
+
+For complete details about the security measures and recent updates, please see [SECURITY_UPDATE.md](docs/SECURITY_UPDATE.md).
+
+## Troubleshooting
+
+If you encounter authentication issues with the GitHub API, please refer to our [Authentication Fix Documentation](docs/AUTH_FIX.md) which explains how we handle token authentication and recent fixes to token handling.
 
 ## License
 

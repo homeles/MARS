@@ -30,6 +30,8 @@ services:
       - PORT=4000
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - GITHUB_ENTERPRISE_NAME=${GITHUB_ENTERPRISE_NAME}
+      - MARS_ADMIN=${MARS_ADMIN}
+      - MARS_PASSWORD=${MARS_PASSWORD}
     depends_on:
       - mongo
     volumes:
@@ -57,7 +59,6 @@ services:
       - "3001:3000"
     environment:
       - NODE_ENV=development
-      - VITE_GITHUB_TOKEN=${GITHUB_TOKEN}
       - VITE_GITHUB_ENTERPRISE_NAME=${GITHUB_ENTERPRISE_NAME}
     depends_on:
       - server

@@ -109,8 +109,39 @@ export const Dashboard: React.FC = () => {
   };
 
   // Fetch organizations for the dropdown
+  // We first need to get the enterprise name from user preferences
+  // Get the enterprise name from the environment
+  const [defaultEnterprise, setDefaultEnterprise] = useState<string>('');
+
+  useEffect(() => {
+    const fetchEnterprise = async () => {
+      try {
+        // Get enterprise name from environment variables first
+        const envEnterprise = import.meta.env.VITE_GITHUB_ENTERPRISE_NAME;
+        if (envEnterprise) {
+          console.log('Using enterprise from environment:', envEnterprise);
+          setDefaultEnterprise(envEnterprise);
+          return;
+        }
+        
+        // Fallback to API if env variable not set
+        console.log('Environment variable not set, fetching from API...');
+        const response = await fetch('/api/github-config');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch config: ${response.statusText}`);
+        }
+        const config = await response.json();
+        setDefaultEnterprise(config?.defaultEnterpriseName || '');
+      } catch (error: any) {
+        console.error('Error fetching enterprise name:', error.message);
+        setDefaultEnterprise('');
+      }
+    };
+    fetchEnterprise();
+  }, []);
   const { data: organizationsData } = useQuery(GET_ORGANIZATIONS, {
-    variables: { enterprise: import.meta.env.VITE_GITHUB_ENTERPRISE_NAME || '' }
+    variables: { enterprise: defaultEnterprise },
+    skip: !defaultEnterprise
   });
   const organizations = organizationsData?.enterprise?.organizations?.nodes?.map((node: { login: string }) => node.login) || [];
 

@@ -15,6 +15,8 @@ import dotenv from 'dotenv';
 import { merge } from 'lodash';
 import mongoose from 'mongoose';
 import { initializeCronJobs } from './utils/cronManager';
+import authRoutes from './routes/authRoutes';
+import configRoutes from './routes/configRoutes';
 
 dotenv.config();
 
@@ -126,11 +128,31 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
+  // Register API routes
+  app.use('/api', authRoutes);
+  app.use('/api', configRoutes);
+
   // Apply Apollo Server middleware with minimal context logging
   app.use('/graphql', expressMiddleware(server, {
     context: async ({ req }) => {
-      const token = req.headers.authorization || '';
-      return { token };
+      // For APIs that need a token, use the environment variable by default
+      // This is safer than relying on client-provided tokens
+      let token = process.env.GITHUB_TOKEN || '';
+      
+      // Only for development/testing where we might need to override with a request header
+      if (process.env.NODE_ENV === 'development' && req.headers.authorization) {
+        token = req.headers.authorization;
+      }
+      
+      // Validate token before returning context
+      if (!token || token.trim() === '') {
+        console.warn('No valid GitHub token in environment variables or request headers');
+      }
+      
+      return { 
+        token: token.trim() !== '' ? token : '',
+        enterpriseName: process.env.GITHUB_ENTERPRISE_NAME || ''
+      };
     },
   }));
 

@@ -41,6 +41,18 @@ interface OrgMigrationsResponse {
   errors?: Array<{ message: string }>;
 }
 
+// Get list of all enterprises in the database
+router.get('/enterprises/list', async (_req: Request, res: Response) => {
+  try {
+    // Distinct query to get all unique enterprise names
+    const enterprises = await RepositoryMigration.distinct('enterpriseName');
+    res.json(enterprises);
+  } catch (error) {
+    console.error('Error fetching enterprises:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get all migrations from local database
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -80,6 +92,14 @@ async function verifyEnterpriseAccess(enterpriseName: string, token: string): Pr
         }
       }
     `;
+    
+    // Use environment variable token if passed token is empty
+    const accessToken = (!token || token.trim() === '') ? process.env.GITHUB_TOKEN : token;
+    
+    if (!accessToken || accessToken.trim() === '') {
+      console.error('No valid GitHub token available for enterprise access verification');
+      return false;
+    }
 
     const response = await axios.post(
       GITHUB_GRAPHQL_URL,
@@ -89,7 +109,7 @@ async function verifyEnterpriseAccess(enterpriseName: string, token: string): Pr
       },
       {
         headers: {
-          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+          'Authorization': accessToken.startsWith('Bearer ') ? accessToken : `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         }
       }
@@ -140,6 +160,13 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
       }
     `;
 
+    // Use environment variable token if passed token is empty
+    const accessToken = (!token || token.trim() === '') ? process.env.GITHUB_TOKEN : token;
+    
+    if (!accessToken || accessToken.trim() === '') {
+      throw new Error('GitHub token is not configured properly. Please check your environment variables.');
+    }
+    
     const orgsResponse = await axios.post(
       GITHUB_GRAPHQL_URL,
       {
@@ -148,7 +175,7 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
       },
       {
         headers: {
-          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+          'Authorization': accessToken.startsWith('Bearer ') ? accessToken : `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         }
       }
@@ -202,6 +229,13 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
         `;
 
         try {
+          // Use environment variable token if passed token is empty
+          const accessToken = (!token || token.trim() === '') ? process.env.GITHUB_TOKEN : token;
+          
+          if (!accessToken || accessToken.trim() === '') {
+            throw new Error('GitHub token is not configured properly. Please check your environment variables.');
+          }
+          
           const response: { data: OrgMigrationsResponse } = await axios.post(
             GITHUB_GRAPHQL_URL,
             {
@@ -214,7 +248,7 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
             },
             {
               headers: {
-                'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+                'Authorization': accessToken.startsWith('Bearer ') ? accessToken : `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
               }
             }

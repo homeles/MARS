@@ -58,18 +58,17 @@ const GET_MIGRATION_METRICS = gql`
 const Reporting: React.FC = () => {
   const [selectedEnterprise, setSelectedEnterprise] = useState<string>('');
 
-  // Load enterprise from localStorage
+  // Load enterprise from environment
   useEffect(() => {
-    const savedEnterprise = localStorage.getItem('selectedEnterprise');
-    if (savedEnterprise) {
-      setSelectedEnterprise(savedEnterprise);
+    // Get enterprise name from the environment variable
+    // In Vite, we need to use import.meta.env instead of process.env
+    const defaultEnterprise = import.meta.env.VITE_GITHUB_ENTERPRISE_NAME;
+    
+    if (defaultEnterprise) {
+      console.log('Using enterprise name from env:', defaultEnterprise);
+      setSelectedEnterprise(defaultEnterprise);
     } else {
-      // Use the environment variable as fallback
-      const envEnterprise = import.meta.env.VITE_GITHUB_ENTERPRISE_NAME;
-      if (envEnterprise) {
-        setSelectedEnterprise(envEnterprise);
-        localStorage.setItem('selectedEnterprise', envEnterprise);
-      }
+      console.error('GITHUB_ENTERPRISE_NAME is not defined in the .env file or not properly exposed to the client. Application will not work correctly.');
     }
   }, []);
 
@@ -80,6 +79,25 @@ const Reporting: React.FC = () => {
     pollInterval: 30000, // Poll every 30 seconds
     skip: !selectedEnterprise
   });
+
+  if (!selectedEnterprise) {
+    return (
+      <div className="p-4 text-center mt-8">
+        <div className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-4">
+          Enterprise name not found
+        </div>
+        <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Environment variable GITHUB_ENTERPRISE_NAME exists in your .env file but is not accessible to the client.
+        </div>
+        <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+          <strong>Solution:</strong> Add this to your client/.env file:
+        </div>
+        <pre className="bg-gray-100 dark:bg-gray-700 p-2 rounded text-sm font-mono">
+          VITE_GITHUB_ENTERPRISE_NAME=ford
+        </pre>
+      </div>
+    );
+  }
 
   if (loading) return <div className="p-4">Loading metrics...</div>;
   if (error) return <div className="p-4 text-red-500">Error loading metrics: {error.message}</div>;
@@ -118,6 +136,12 @@ const Reporting: React.FC = () => {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Migration Reports</h1>
+        
+        {selectedEnterprise && (
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Enterprise: <span className="font-medium">{selectedEnterprise}</span>
+          </div>
+        )}
       </div>
 
       {/* Stats Grid */}
@@ -159,7 +183,7 @@ const Reporting: React.FC = () => {
         />
         <StatsCard
           title="Success Rate"
-          value={`${Math.round((metrics.completedCount / metrics.totalCount) * 100)}%`}
+          value={metrics.totalCount > 0 ? `${Math.round(((metrics.completedCount || 0) / metrics.totalCount) * 100)}%` : '0%'}
           trend={{
             value: 5,
             isPositive: true

@@ -127,6 +127,10 @@ interface Migration {
 }
 
 async function fetchAllOrganizations(enterpriseName: string, token: string) {
+  if (!token || token.trim() === '') {
+    throw new Error('GitHub token is required to fetch organizations');
+  }
+
   const query = `
     query getOrganizations($enterprise: String!) {
       enterprise(slug: $enterprise) {
@@ -142,6 +146,9 @@ async function fetchAllOrganizations(enterpriseName: string, token: string) {
   `;
 
   try {
+    const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+    console.log(`[GitHub API] Fetching organizations for enterprise: ${enterpriseName}`);
+    
     const response = await axios.post(
       GITHUB_GRAPHQL_URL,
       {
@@ -150,7 +157,7 @@ async function fetchAllOrganizations(enterpriseName: string, token: string) {
       },
       {
         headers: {
-          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+          'Authorization': authToken,
           'Content-Type': 'application/json',
         }
       }
@@ -198,6 +205,10 @@ interface OrgMigrationsResponse {
 }
 
 async function fetchOrganizationMigrations(orgLogin: string, token: string): Promise<{ migrations: any[]; totalPages: number }> {
+  if (!token || token.trim() === '') {
+    throw new Error('GitHub token is required to fetch organization migrations');
+  }
+
   let hasNextPage = true;
   let cursor: string | null = null;
   let currentPage = 1;
@@ -240,6 +251,7 @@ async function fetchOrganizationMigrations(orgLogin: string, token: string): Pro
 
       console.log(`[Sync] Fetching page ${currentPage} for organization ${orgLogin}`);
       
+      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       const response: { data: OrgMigrationsResponse } = await axios.post(
         GITHUB_GRAPHQL_URL,
         {
@@ -248,7 +260,7 @@ async function fetchOrganizationMigrations(orgLogin: string, token: string): Pro
         },
         {
           headers: {
-            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+            'Authorization': authToken,
             'Content-Type': 'application/json',
           }
         }
@@ -378,7 +390,9 @@ async function fetchMigrationsPage(orgLogin: string, token: string, cursor: stri
     },
     {
       headers: {
-        'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+        'Authorization': token && token.trim() !== '' ? 
+          (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : 
+          `Bearer ${process.env.GITHUB_TOKEN || ''}`,
         'Content-Type': 'application/json',
       }
     }
@@ -538,10 +552,6 @@ export const resolvers = {
     },
 
     migration: async (_: unknown, { id }: { id: string }, { token }: ResolverContext) => {
-      if (!token) {
-        throw new Error('Authentication token is required');
-      }
-
       // First try to find by MongoDB _id
       let localMigration = await RepositoryMigration.findById(id) as IRepositoryMigration | null;
       
@@ -557,6 +567,13 @@ export const resolvers = {
           id: migration._id.toString(), // Explicitly map _id to id
           createdAt: migration.createdAt instanceof Date ? migration.createdAt.toISOString() : null
         };
+      }
+      
+      // Use environment variable token for GitHub API access
+      const accessToken = process.env.GITHUB_TOKEN;
+      
+      if (!accessToken) {
+        throw new Error('GitHub token is not configured in server environment variables');
       }
 
       // If not found locally, try to fetch from GitHub
@@ -592,7 +609,7 @@ export const resolvers = {
           },
           {
             headers: {
-              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/json',
             }
           }
@@ -612,11 +629,10 @@ export const resolvers = {
     enterpriseStats: async (
       _: unknown,
       { enterpriseName }: { enterpriseName: string },
-      { token }: ResolverContext
+      _context: any
     ) => {
-      if (!token) {
-        throw new Error('Authentication token is required');
-      }
+      // Stats can be viewed without authentication
+      // This allows dashboard and reporting pages to work without a token
 
       // Use aggregation to get stats efficiently
       const stats = await RepositoryMigration.aggregate([
@@ -685,8 +701,14 @@ export const resolvers = {
     },
 
     enterprise: async (_: unknown, { slug }: { slug: string }, { token }: ResolverContext) => {
-      if (!token) {
-        throw new Error('Authentication token is required');
+      // Don't require authentication for basic organization listing
+      // This allows the Dashboard to load without requiring a token
+      
+      // Use environment variable token instead of client token for security
+      const accessToken = process.env.GITHUB_TOKEN;
+      
+      if (!accessToken) {
+        throw new Error('GitHub token is not configured in server environment variables');
       }
 
       const query = `
@@ -712,7 +734,7 @@ export const resolvers = {
           },
           {
             headers: {
-              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/json',
             }
           }
@@ -766,9 +788,16 @@ export const resolvers = {
       try {
         console.log(`[Sync] Starting migration sync for enterprise: ${enterpriseName}`);
         
+        // Use environment variable token if the passed token is empty (client-side security)
+        const accessToken = (token?.trim() === '' || !token) ? process.env.GITHUB_TOKEN : token;
+        
+        if (!accessToken || accessToken.trim() === '') {
+          throw new Error('GitHub token not configured. Please set GITHUB_TOKEN in environment variables.');
+        }
+        
         // Fetch organizations
         console.log(`[Sync] Fetching organizations for enterprise ${enterpriseName}`);
-        let organizations = await fetchAllOrganizations(enterpriseName, token);
+        let organizations = await fetchAllOrganizations(enterpriseName, accessToken);
         
         // Filter organizations if specific ones are selected
         if (selectedOrganizations && selectedOrganizations.length > 0) {
@@ -922,7 +951,7 @@ export const resolvers = {
               };
               
               try {
-                result = await fetchMigrationsPage(org.login, token, cursor);
+                result = await fetchMigrationsPage(org.login, accessToken, cursor);
               } catch (pageError) {
                 // Check if this is the missing migration source error
                 const errorMsg = pageError instanceof Error ? pageError.message : 'Unknown error';
@@ -1082,6 +1111,13 @@ export const resolvers = {
     },
 
     checkOrgAccess: async (_: unknown, { enterpriseName, token }: { enterpriseName: string; token: string }) => {
+      // Use environment variable token if the passed token is empty (client-side security)
+      const accessToken = token.trim() === '' ? process.env.GITHUB_TOKEN : token;
+        
+      if (!accessToken) {
+        throw new Error('GitHub token not configured. Please set GITHUB_TOKEN in environment variables.');
+      }
+      
       // Clear existing access statuses for this enterprise
       await OrgAccessStatus.deleteMany({ enterpriseName });
 
@@ -1108,7 +1144,7 @@ export const resolvers = {
         },
         {
           headers: {
-            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+            'Authorization': accessToken.startsWith('Bearer ') ? accessToken : `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           }
         }
@@ -1141,7 +1177,7 @@ export const resolvers = {
             },
             {
               headers: {
-                'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+                'Authorization': accessToken.startsWith('Bearer ') ? accessToken : `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
               }
             }
