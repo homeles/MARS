@@ -120,7 +120,31 @@ export const Dashboard: React.FC = () => {
 
   const defaultEnterprise = 
     enterpriseData?.userPreferences?.find((pref: any) => pref.key === 'defaultEnterpriseName')?.value || '';
-  
+  // We first need to get the enterprise name from user preferences via /api/github-config
+  const [defaultEnterprise, setDefaultEnterprise] = useState<string>('');
+  const [enterpriseLoading, setEnterpriseLoading] = useState<boolean>(true);
+  const [enterpriseError, setEnterpriseError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchEnterprise = async () => {
+      setEnterpriseLoading(true);
+      setEnterpriseError(null);
+      try {
+        const response = await fetch('/api/github-config');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch config: ${response.statusText}`);
+        }
+        const config = await response.json();
+        setDefaultEnterprise(config?.defaultEnterpriseName || '');
+      } catch (error: any) {
+        setEnterpriseError(error.message || 'Unknown error');
+        setDefaultEnterprise('');
+      } finally {
+        setEnterpriseLoading(false);
+      }
+    };
+    fetchEnterprise();
+  }, []);
   const { data: organizationsData } = useQuery(GET_ORGANIZATIONS, {
     variables: { enterprise: defaultEnterprise },
     skip: !defaultEnterprise
