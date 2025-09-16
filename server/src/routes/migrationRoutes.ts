@@ -358,7 +358,7 @@ router.get('/export/csv', async (req: Request, res: Response) => {
     });
 
     // Combine headers and rows
-    const csvContent = [csvHeaders.join(','), ...csvRows].join('\n');
+    const csvContent = [csvHeaders.map(h => `"${h.replace(/"/g, '""')}"`).join(','), ...csvRows].join('\n');
 
     // Set appropriate headers for CSV download
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
