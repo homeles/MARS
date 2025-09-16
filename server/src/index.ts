@@ -126,6 +126,10 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
+  // REST API routes
+  const { migrationRoutes } = await import('./routes/migrationRoutes');
+  app.use('/api/migrations', migrationRoutes);
+
   // Apply Apollo Server middleware with minimal context logging
   app.use('/graphql', expressMiddleware(server, {
     context: async ({ req }) => {

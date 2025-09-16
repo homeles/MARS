@@ -303,4 +303,79 @@ router.post('/sync', async (req: Request<{}, {}, SyncBody>, res: Response) => {
   }
 });
 
+// Export all migrations as CSV
+// Note: In production, this endpoint should include rate limiting to prevent DoS attacks
+router.get('/export/csv', async (req: Request, res: Response) => {
+  try {
+    // Fetch all migrations from the database, sorted by createdAt descending
+    const migrations = await RepositoryMigration.find()
+      .collation({ locale: 'en', strength: 2 })
+      .sort({ createdAt: -1 });
+
+    // CSV headers
+    const csvHeaders = [
+      'Repository Name',
+      'Organization',
+      'Status',
+      'Created At',
+      'Duration (minutes)',
+      'Warnings Count',
+      'Failure Reason',
+      'Enterprise Name',
+      'Source URL',
+      'GitHub ID',
+      'Database ID',
+      'Migration Log URL',
+      'Migration Source ID',
+      'Migration Source Name',
+      'Migration Source Type',
+      'Migration Source URL'
+    ];
+
+    // Convert migrations to CSV rows
+    const csvRows = migrations.map((migration) => {
+      const duration = migration.duration ? Math.round(migration.duration / 1000 / 60) : '';
+      const createdAt = migration.createdAt ? new Date(migration.createdAt).toISOString() : '';
+      
+      return [
+        `"${migration.repositoryName?.replace(/"/g, '""') || ''}"`,
+        `"${migration.organizationName?.replace(/"/g, '""') || ''}"`,
+        `"${migration.state || ''}"`,
+        `"${createdAt}"`,
+        `"${duration}"`,
+        `"${migration.warningsCount || 0}"`,
+        `"${(migration.failureReason || '').replace(/"/g, '""')}"`,
+        `"${migration.enterpriseName?.replace(/"/g, '""') || ''}"`,
+        `"${migration.sourceUrl?.replace(/"/g, '""') || ''}"`,
+        `"${migration.githubId?.replace(/"/g, '""') || ''}"`,
+        `"${migration.databaseId?.replace(/"/g, '""') || ''}"`,
+        `"${migration.migrationLogUrl?.replace(/"/g, '""') || ''}"`,
+        `"${migration.migrationSource?.id?.replace(/"/g, '""') || ''}"`,
+        `"${migration.migrationSource?.name?.replace(/"/g, '""') || ''}"`,
+        `"${migration.migrationSource?.type?.replace(/"/g, '""') || ''}"`,
+        `"${migration.migrationSource?.url?.replace(/"/g, '""') || ''}"`
+      ].join(',');
+    });
+
+    // Combine headers and rows
+    const csvContent = [csvHeaders.join(','), ...csvRows].join('\n');
+
+    // Set appropriate headers for CSV download
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `migrations-export-${timestamp}.csv`;
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+    res.send(csvContent);
+  } catch (error) {
+    console.error('Error exporting migrations to CSV:', error);
+    res.status(500).json({ 
+      error: 'Failed to export migrations to CSV',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 export { router as migrationRoutes };
