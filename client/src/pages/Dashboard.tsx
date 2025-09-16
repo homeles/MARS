@@ -149,7 +149,8 @@ export const Dashboard: React.FC = () => {
       setIsExporting(true);
       logger.info('Starting CSV export...');
       
-      const response = await axios.get('http://localhost:4000/api/migrations/export/csv', {
+      const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+      const response = await axios.get(`${apiBaseUrl}/api/migrations/export/csv`, {
         responseType: 'blob', // Important for handling binary data
       });
 
