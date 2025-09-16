@@ -338,22 +338,22 @@ router.get('/export/csv', async (req: Request, res: Response) => {
       const createdAt = migration.createdAt ? new Date(migration.createdAt).toISOString() : '';
       
       return [
-        `"${migration.repositoryName?.replace(/"/g, '""') || ''}"`,
-        `"${migration.organizationName?.replace(/"/g, '""') || ''}"`,
+        `"${migration.repositoryName ? String(migration.repositoryName).replace(/"/g, '""') : ''}"`,
+        `"${migration.organizationName ? String(migration.organizationName).replace(/"/g, '""') : ''}"`,
         `"${migration.state || ''}"`,
         `"${createdAt}"`,
         `"${duration}"`,
         `"${migration.warningsCount || 0}"`,
-        `"${(migration.failureReason || '').replace(/"/g, '""')}"`,
-        `"${migration.enterpriseName?.replace(/"/g, '""') || ''}"`,
-        `"${migration.sourceUrl?.replace(/"/g, '""') || ''}"`,
-        `"${migration.githubId?.replace(/"/g, '""') || ''}"`,
-        `"${migration.databaseId?.replace(/"/g, '""') || ''}"`,
-        `"${migration.migrationLogUrl?.replace(/"/g, '""') || ''}"`,
-        `"${migration.migrationSource?.id?.replace(/"/g, '""') || ''}"`,
-        `"${migration.migrationSource?.name?.replace(/"/g, '""') || ''}"`,
-        `"${migration.migrationSource?.type?.replace(/"/g, '""') || ''}"`,
-        `"${migration.migrationSource?.url?.replace(/"/g, '""') || ''}"`
+        `"${migration.failureReason ? String(migration.failureReason).replace(/"/g, '""') : ''}"`,
+        `"${migration.enterpriseName ? String(migration.enterpriseName).replace(/"/g, '""') : ''}"`,
+        `"${migration.sourceUrl ? String(migration.sourceUrl).replace(/"/g, '""') : ''}"`,
+        `"${migration.githubId !== undefined && migration.githubId !== null ? String(migration.githubId).replace(/"/g, '""') : ''}"`,
+        `"${migration.databaseId !== undefined && migration.databaseId !== null ? String(migration.databaseId).replace(/"/g, '""') : ''}"`,
+        `"${migration.migrationLogUrl ? String(migration.migrationLogUrl).replace(/"/g, '""') : ''}"`,
+        `"${migration.migrationSource?.id !== undefined && migration.migrationSource?.id !== null ? String(migration.migrationSource.id).replace(/"/g, '""') : ''}"`,
+        `"${migration.migrationSource?.name ? String(migration.migrationSource.name).replace(/"/g, '""') : ''}"`,
+        `"${migration.migrationSource?.type ? String(migration.migrationSource.type).replace(/"/g, '""') : ''}"`,
+        `"${migration.migrationSource?.url ? String(migration.migrationSource.url).replace(/"/g, '""') : ''}"`
       ].join(',');
     });
 
