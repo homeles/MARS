@@ -7,6 +7,7 @@ import Tooltip from '../components/Tooltip';
 import { MigrationState, Migration } from '../types';
 import { logger } from '../utils/logger';
 import debounce from 'lodash.debounce';
+import axios from 'axios';
 
 // Get organizations query
 const GET_ORGANIZATIONS = gql`
@@ -139,6 +140,51 @@ export const Dashboard: React.FC = () => {
       organizationName: undefined,
       page: 1
     });
+  };
+
+  // CSV export functionality
+  const [isExporting, setIsExporting] = useState(false);
+  const exportToCSV = async () => {
+    try {
+      setIsExporting(true);
+      logger.info('Starting CSV export...');
+      
+      const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
+      const response = await axios.get(`${apiBaseUrl}/api/migrations/export/csv`, {
+        responseType: 'blob', // Important for handling binary data
+      });
+
+      // Create blob URL and trigger download
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Extract filename from response headers or use default
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'migrations-export.csv';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      logger.info('CSV export completed successfully');
+    } catch (error) {
+      logger.error('Error exporting CSV:', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+      alert('Failed to export CSV. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleSort = (field: typeof sortField) => {
@@ -409,6 +455,40 @@ export const Dashboard: React.FC = () => {
     <div className="container mx-auto px-4 py-6; space-y-8">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Migration Dashboard</h1>
+        <button
+          onClick={exportToCSV}
+          disabled={isExporting}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Export all migrations to CSV file"
+        >
+          {isExporting ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Exporting...
+            </>
+          ) : (
+            <>
+              <svg
+                className="-ml-1 mr-2 h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              Export CSV
+            </>
+          )}
+        </button>
       </div>
 
       {/* Stats Cards */}
