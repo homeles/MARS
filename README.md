@@ -12,7 +12,8 @@ A modern, full-stack application to monitor and track GitHub Repository Migratio
 - 📝 Store migration data for historical reference and analysis
 - 🔄 Sync migrations from GitHub API with a personal access token
 - 📈 View statistics about migration success rates and status
-- 📱 Modern, responsive UI built with React and Tailwind CSS
+- � Protected Settings page with username/password authentication
+- �📱 Modern, responsive UI built with React and Tailwind CSS
 
 ## Tech Stack
 
@@ -132,15 +133,26 @@ Edit the `.env` file in the server directory to modify:
 - `PORT`: The port on which the server will run (default: 4000)
 - `MONGO_URI`: MongoDB connection string (default: mongodb://localhost:27017/github-migrations)
 - `NODE_ENV`: Environment mode (development or production)
+- `MARS_ADMIN`: Username for Settings page authentication (default: admin)
+- `MARS_PASSWORD`: Password for Settings page authentication (default: secure123)
 
 ### GitHub Authentication
 
 To use the app:
 
-1. Go to the Settings page
+1. Go to the Settings page (requires authentication with the credentials defined in `.env`)
 2. Enter your GitHub Enterprise/Organization name
 3. Provide a GitHub Personal Access Token
 4. Click on "Sync Migrations from GitHub"
+
+### Settings Page Authentication
+
+The Settings page is protected with a username/password authentication:
+
+- Default username: `admin` (configurable via `MARS_ADMIN` in `.env`)
+- Default password: `secure123` (configurable via `MARS_PASSWORD` in `.env`)
+
+**Important**: Make sure to change the default credentials in production environments!
 
 ## API Documentation
 

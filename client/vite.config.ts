@@ -11,6 +11,8 @@ export default defineConfig({
   },
   define: {
     'process.env.GITHUB_TOKEN': JSON.stringify(process.env.VITE_GITHUB_TOKEN),
-    'process.env.GITHUB_ENTERPRISE_NAME': JSON.stringify(process.env.VITE_GITHUB_ENTERPRISE_NAME)
+    'process.env.GITHUB_ENTERPRISE_NAME': JSON.stringify(process.env.VITE_GITHUB_ENTERPRISE_NAME),
+    'process.env.MARS_ADMIN': JSON.stringify(process.env.VITE_MARS_ADMIN),
+    'process.env.MARS_PASSWORD': JSON.stringify(process.env.VITE_MARS_PASSWORD)
   }
 })
