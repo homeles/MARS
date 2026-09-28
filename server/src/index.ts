@@ -10,7 +10,6 @@ import { useServer } from 'graphql-ws/lib/use/ws';
 import { typeDefs } from './schema/typeDefs';
 import { resolvers } from './schema/resolvers';
 import { syncHistoryResolvers, userPreferenceResolvers } from './utils/resolverUtils';
-import { PubSub } from 'graphql-subscriptions';
 import dotenv from 'dotenv';
 import { merge } from 'lodash';
 import mongoose from 'mongoose';
@@ -18,12 +17,10 @@ import { initializeCronJobs } from './utils/cronManager';
 
 dotenv.config();
 
-// Create and export a properly initialized PubSub instance
-export const pubsub = new PubSub();
-
-// Export event name constants for consistent use
-export const SYNC_PROGRESS_UPDATED = 'SYNC_PROGRESS_UPDATED';
-export const SYNC_HISTORY_UPDATED = 'SYNC_HISTORY_UPDATED';
+// PubSub and channel names now live in ./pubsub so resolvers can be imported
+// without booting the server. Re-exported here to preserve existing imports.
+import { pubsub, SYNC_PROGRESS_UPDATED, SYNC_HISTORY_UPDATED } from './pubsub';
+export { pubsub, SYNC_PROGRESS_UPDATED, SYNC_HISTORY_UPDATED };
 
 type LogLevel = 'info' | 'error' | 'debug';
 

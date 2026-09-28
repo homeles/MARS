@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import axios from 'axios';
 import { MigrationState, RepositoryMigration, OrgAccessStatus, IRepositoryMigration } from '../models/RepositoryMigration';
 import { CronConfig } from '../models/CronConfig';
-import { pubsub, SYNC_PROGRESS_UPDATED, SYNC_HISTORY_UPDATED } from '../index';
+import { pubsub, SYNC_PROGRESS_UPDATED, SYNC_HISTORY_UPDATED } from '../pubsub';
 import { logger } from '../utils/logger';
 import { UserPreference } from '../models/UserPreference';
 import { SyncHistory } from '../models/SyncHistory';
