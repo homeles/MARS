@@ -1,6 +1,6 @@
 import { UserPreference, IUserPreference } from '../models/UserPreference';
 import { SyncHistory, ISyncHistory } from '../models/SyncHistory';
-import { pubsub, SYNC_HISTORY_UPDATED } from '../index';
+import { pubsub, SYNC_HISTORY_UPDATED } from '../pubsub';
 import { withFilter } from 'graphql-subscriptions';
 
 // User Preference resolver functions
