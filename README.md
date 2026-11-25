@@ -25,7 +25,7 @@ A modern, full-stack application to monitor and track GitHub Repository Migratio
 ## Prerequisites
 
 - [Docker and Docker Compose](https://docs.docker.com/get-docker/)
-- [Node.js](https://nodejs.org/) v18 or higher (for local development)
+- [Node.js](https://nodejs.org/) v22.15 or higher, v24 LTS recommended (for local development)
 - [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) with:
   - `repo` scope (for repository access)
   - `read:org` scope (for organization access)
