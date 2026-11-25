@@ -1238,12 +1238,9 @@ export const resolvers = {
   Subscription: {
     syncProgressUpdated: {
       subscribe: withFilter(
-        // Explicitly return the asyncIterator with a proper function declaration
+        // graphql-subscriptions v3 renamed asyncIterator() to asyncIterableIterator()
         function syncProgressIterator() {
-          // Using ts-ignore directive to suppress the TypeScript error
-          // @ts-ignore - asyncIterator exists at runtime but TypeScript doesn't know about it
-          const iterator = pubsub.asyncIterator([SYNC_PROGRESS_UPDATED]);
-          return iterator; // Ensure we're returning the iterator directly
+          return pubsub.asyncIterableIterator([SYNC_PROGRESS_UPDATED]);
         },
         function(payload: any, args: { enterpriseName: string } | undefined): boolean {
           if (!payload || !args) return false;

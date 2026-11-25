@@ -126,10 +126,9 @@ export const syncHistoryResolvers = {
   Subscription: {
     syncHistoryUpdated: {
       subscribe: withFilter(
-        // Make sure we return an async iterable by using a function that properly returns the pubsub.asyncIterator
+        // graphql-subscriptions v3 renamed asyncIterator() to asyncIterableIterator()
         function() {
-          // @ts-ignore - asyncIterator exists at runtime but TypeScript compiler doesn't recognize it
-          return pubsub.asyncIterator([SYNC_HISTORY_UPDATED]);
+          return pubsub.asyncIterableIterator([SYNC_HISTORY_UPDATED]);
         },
         (payload, variables) => {
           // Filter based on enterpriseName or syncId if provided
